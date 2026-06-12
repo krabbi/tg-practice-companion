@@ -1,0 +1,24 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# Tooling caches
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Secrets / local env
+.env
+
+# Local data
+data/
+
+# AI tooling artifacts (operator-local)
+.omc/
+.omx/
+.understand-anything/
+.claude/settings.local.json
