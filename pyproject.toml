@@ -1,0 +1,54 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tg-practice-companion"
+version = "0.1.0"
+description = "Personal Telegram bot for daily CBT practices"
+requires-python = ">=3.11"
+dependencies = [
+    "aiogram>=3.7",
+    "anthropic>=0.25",
+    "sqlalchemy>=2.0",
+    "alembic>=1.13",
+    "asyncpg>=0.29",
+    "groq>=0.9",
+    "apscheduler>=3.10",
+    "pydantic-settings>=2.2",
+    "python-dotenv>=1.0",
+    "pyyaml>=6.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "aiosqlite",
+    "watchfiles",
+    "pytest",
+    "pytest-asyncio",
+    "pytest-mock",
+    "pytest-cov",
+    "ruff",
+    "pre-commit",
+]
+
+[tool.setuptools.packages.find]
+include = ["bot*", "cli*"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+ignore = ["E501"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+
+[tool.coverage.run]
+source = ["bot", "cli"]
+omit = ["bot/__main__.py"]
+
+[tool.coverage.report]
+fail_under = 80
