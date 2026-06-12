@@ -94,21 +94,23 @@ Repeat until **APPROVED** from pr-reviewer.
 
 ### Step 5 — Check if docs/user_guide.md was changed
 
+(Note: `gh pr diff` does not accept path arguments — use `--name-only` + `git diff`.)
+
 ```bash
-gh pr diff <PR_NUMBER> -- docs/user_guide.md
+gh pr diff <PR_NUMBER> --name-only
 ```
 
-If output is **non-empty** (file changed) → go to Step 6.
-If output is **empty** → go to Step 7.
+If the list **contains** `docs/user_guide.md` → go to Step 6.
+If it does **not** → go to Step 7.
 
 ---
 
 ### Step 6 — Product acceptance via product-manager agent
 
-Get the user_guide diff to pass to the agent:
+Get the user_guide diff to pass to the agent (the PR branch is checked out locally):
 
 ```bash
-gh pr diff <PR_NUMBER> -- docs/user_guide.md
+git diff origin/main... -- docs/user_guide.md
 ```
 
 Invoke the `product-manager` agent.
@@ -124,7 +126,7 @@ Include in the agent prompt:
 - **Diff of `docs/user_guide.md` (include inline):**
 
 ```diff
-<paste gh pr diff -- docs/user_guide.md output>
+<paste git diff origin/main... -- docs/user_guide.md output>
 ```
 
 If product-manager returned **PRODUCT CHANGES REQUESTED**:
