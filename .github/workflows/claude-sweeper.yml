@@ -1,0 +1,36 @@
+name: Claude sweeper
+
+# Queue sweeper: every 6 hours picks up one accumulated 'claude-ready' issue
+# that the instant workflow missed (runner was asleep, subscription cap hit,
+# job failed). Also recovers tasks stuck in claude-in-progress without a PR.
+on:
+  schedule:
+    - cron: "0 */6 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: claude-worker # strictly one task at a time, shared with claude-issue
+  cancel-in-progress: false
+
+jobs:
+  sweep:
+    runs-on: self-hosted
+    timeout-minutes: 120
+    steps:
+      - uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          prompt: |
+            Найди через gh самый старый открытый issue с меткой claude-ready,
+            без метки claude-in-progress и без привязанного открытого PR.
+            Исключение: если у issue метка claude-in-progress стоит больше суток,
+            а открытого PR по нему нет — задача застряла: сними метку и возьми
+            этот issue заново.
+            Если подходящих issue нет — заверши работу, ничего не делая.
+            Если есть: поставь метку claude-in-progress, реши задачу в новой
+            ветке, прогони тесты/линт, открой PR с "Closes #N" в описании,
+            оставь в issue комментарий со ссылкой на PR.
+            Если issue непонятен — не выдумывай: задай уточняющие вопросы
+            комментарием в issue и сними метку claude-in-progress.
+            Только один issue за запуск.
+          claude_args: "--max-turns 50"

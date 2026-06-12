@@ -1,0 +1,32 @@
+name: Claude on ready issue
+
+# Instant reaction: runs when an issue is opened already carrying the
+# 'claude-ready' label, or when the label is added later. The label is an
+# explicit operator opt-in — without it the automation never touches an issue
+# (protects pre-existing backlog issues and the subscription cap).
+on:
+  issues:
+    types: [opened, labeled]
+
+concurrency:
+  group: claude-worker # strictly one task at a time, shared with the sweeper
+  cancel-in-progress: false
+
+jobs:
+  solve:
+    if: contains(github.event.issue.labels.*.name, 'claude-ready')
+    runs-on: self-hosted
+    timeout-minutes: 120
+    steps:
+      - uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          prompt: |
+            Реши issue #${{ github.event.issue.number }} в этом репозитории.
+            Порядок: поставь на issue метку claude-in-progress (gh issue edit),
+            изучи требование, реализуй в новой ветке, прогони тесты/линт,
+            открой PR с "Closes #${{ github.event.issue.number }}" в описании,
+            оставь в issue комментарий со ссылкой на PR.
+            Если issue непонятен — не выдумывай: задай уточняющие вопросы
+            комментарием в issue и сними метку claude-in-progress.
+          claude_args: "--max-turns 50"
