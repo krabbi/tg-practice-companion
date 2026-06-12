@@ -46,4 +46,6 @@ jobs:
         run: pytest --cov=bot --cov-report=term-missing --cov-fail-under=80
       - name: Collect-only sanity (bootstrap)
         if: steps.botcheck.outputs.has_modules == 'false'
-        run: pytest --collect-only
+        # pytest exits 5 when zero tests are collected — expected on the
+        # bootstrap tree; anything else (e.g. ImportError = 2) must fail.
+        run: pytest --collect-only || { code=$?; [ "$code" -eq 5 ] || exit "$code"; }
