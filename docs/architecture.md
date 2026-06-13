@@ -83,6 +83,12 @@ All fields are loaded from environment variables (or `.env` file) via `pydantic-
 | `jwt_secret` | `JWT_SECRET` | `str` | `""` | Stage-2 stub; unused in Stage 1 |
 | `cors_origins` | `CORS_ORIGINS` | `list[str]` | `[]` | Stage-2 stub; unused in Stage 1 |
 
+## CI / test environment variables
+
+| Env var | Where used | Notes |
+|---|---|---|
+| `TEST_DATABASE_URL` | `tests/integration/test_migrations.py` | Async SQLAlchemy URL for a real Postgres 16 instance. Set by the CI workflow's service container. When absent the migration tests are skipped automatically. Never set in production. |
+
 ## Error handling
 
 _Filled as domain exceptions appear in `bot/exceptions.py`: exception → where raised →
