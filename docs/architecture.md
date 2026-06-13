@@ -156,9 +156,79 @@ Migration: `alembic/versions/0003_journal.py`
 
 ---
 
-_Further tables (`morning_blessings`, `motivational_images`,
-`daily_ai_analyses`, `api_usage_logs`, `want_list_items`, `good_deeds`) added by
-M3–M6 milestones._
+### `morning_blessings` (M3)
+
+A pool of short blessing texts cycled each morning in `rotation_order` sequence.
+
+| Column | Type | Nullable | Default | Notes |
+|---|---|---|---|---|
+| `id` | `UUID` | NO | `uuid4()` | Primary key |
+| `text` | `Text` | NO | — | Blessing body |
+| `rotation_order` | `Integer` | NO | — | Ascending delivery order |
+| `active` | `Boolean` | NO | `true` | Inactive rows are skipped |
+
+Unique constraint: `uq_morning_blessings_rotation_order(rotation_order)`
+
+Migration: `alembic/versions/0004_morning_and_usage.py`
+
+---
+
+### `motivational_images` (M3)
+
+A pool of motivational images, each backed by a `MediaAsset`.
+
+| Column | Type | Nullable | Default | Notes |
+|---|---|---|---|---|
+| `id` | `UUID` | NO | `uuid4()` | Primary key |
+| `media_asset_id` | `UUID FK→media_assets` | NO | — | The underlying media asset |
+| `active` | `Boolean` | NO | `true` | Inactive rows are skipped |
+
+Migration: `alembic/versions/0004_morning_and_usage.py`
+
+---
+
+### `daily_ai_analyses` (M3)
+
+Stores the AI-generated morning analysis message for each user per calendar day.
+
+| Column | Type | Nullable | Default | Notes |
+|---|---|---|---|---|
+| `id` | `UUID` | NO | `uuid4()` | Primary key |
+| `user_id` | `BigInteger` | NO | — | Telegram user ID |
+| `analysis_date` | `Date` | NO | — | Local calendar date the analysis covers |
+| `n_total` | `Integer` | NO | — | Total journal entries analysed |
+| `n_leads` | `Integer` | NO | — | Entries the user marked as leading to goals |
+| `message` | `Text` | NO | — | LLM-generated analysis text sent to the user |
+| `created_at` | `DateTime(tz=True)` | NO | `now()` | Row creation timestamp |
+
+Unique constraint: `uq_daily_analysis_user_date(user_id, analysis_date)` — at most one analysis per user per day.
+
+Migration: `alembic/versions/0004_morning_and_usage.py`
+
+---
+
+### `api_usage_logs` (M3)
+
+One row per product LLM/API call for cost tracking (AC-16).
+
+| Column | Type | Nullable | Default | Notes |
+|---|---|---|---|---|
+| `id` | `UUID` | NO | `uuid4()` | Primary key |
+| `kind` | `Enum(analysis, report, transcription)` | NO | — | Type of API call |
+| `model` | `String(64)` | NO | — | Model identifier, e.g. `claude-haiku-4-5-20251001` |
+| `input_tokens` | `Integer` | NO | — | Prompt tokens consumed |
+| `output_tokens` | `Integer` | NO | — | Completion tokens generated |
+| `audio_seconds` | `Float` | YES | — | Audio duration for `transcription` calls; null otherwise |
+| `cost_usd` | `Numeric(10,6)` | NO | — | Computed cost in USD |
+| `created_at` | `DateTime(tz=True)` | NO | `now()` | Row creation timestamp |
+
+Index: `ix_api_usage_logs_created_at(created_at)` — supports period-sum queries (AC-16 monthly cap).
+
+Migration: `alembic/versions/0004_morning_and_usage.py`
+
+---
+
+_Further tables (`want_list_items`, `good_deeds`) added by M4–M6 milestones._
 
 ## Dependency injection
 
@@ -211,7 +281,7 @@ The journal catch-all carries `StateFilter(None)` so it yields whenever an FSM s
 | `AssessmentService` | `bot/services/assessment_service.py` | Record `SelfAssessment`; `needs_clarify` guard for the sweep |
 | `TranscriptionService` | `bot/services/transcription_service.py` | Groq Whisper transcription; optional (None when key absent) |
 
-### Repositories (M1 + M2)
+### Repositories (M1 + M2 + M3)
 
 | Repository | File | Responsibility |
 |---|---|---|
@@ -221,6 +291,10 @@ The journal catch-all carries `StateFilter(None)` so it yields whenever an FSM s
 | `PendingPromptRepository` | `bot/repositories/pending_prompt_repository.py` | `create`, `get_by_telegram_message_id`, `newest_unconsumed`, `mark_consumed`, `mark_clarify_sent` |
 | `JournalRepository` | `bot/repositories/journal_repository.py` | `create`, `get_by_id` |
 | `SelfAssessmentRepository` | `bot/repositories/self_assessment_repository.py` | `create`, `get_by_entry_id` |
+| `BlessingRepository` | `bot/repositories/blessing_repository.py` | `save`, `get_by_id`, `get_active_ordered` |
+| `ImageRepository` | `bot/repositories/image_repository.py` | `save`, `get_by_id`, `get_active` |
+| `AnalysisRepository` | `bot/repositories/analysis_repository.py` | `save`, `get_by_id`, `get_by_user_and_date` |
+| `ApiUsageRepository` | `bot/repositories/api_usage_repository.py` | `save`, `get_by_id`, `sum_cost_since` |
 
 ## Scheduler (M1)
 
