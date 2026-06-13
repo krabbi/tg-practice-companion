@@ -34,10 +34,19 @@ async def pg_engine():
     """Create a fresh async engine; drop migrated tables after each test."""
     engine = create_async_engine(_TEST_DB_URL, echo=False)
     yield engine
-    # Clean up so repeated local runs stay hermetic.
+    # Clean up so repeated local runs and multi-test CI runs stay hermetic.
+    # Tables must be dropped in FK-dependency order (children before parents).
+    # Enum types are Postgres-only constructs that survive DROP TABLE and must
+    # be dropped explicitly; IF EXISTS keeps this a no-op on SQLite.
     async with engine.begin() as conn:
         await conn.execute(text("DROP TABLE IF EXISTS alembic_version"))
+        await conn.execute(text("DROP TABLE IF EXISTS practice_sends"))
+        await conn.execute(text("DROP TABLE IF EXISTS practices"))
+        await conn.execute(text("DROP TABLE IF EXISTS media_assets"))
         await conn.execute(text("DROP TABLE IF EXISTS users"))
+        await conn.execute(text("DROP TYPE IF EXISTS practice_periodicity_type"))
+        await conn.execute(text("DROP TYPE IF EXISTS practice_content_type"))
+        await conn.execute(text("DROP TYPE IF EXISTS media_asset_kind"))
     await engine.dispose()
 
 

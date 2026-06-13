@@ -21,13 +21,29 @@ depends_on: str | Sequence[str] | None = None
 
 def upgrade() -> None:
     """Create media_assets, practices, and practice_sends tables."""
+    # Create enum types explicitly so they are idempotent on Postgres
+    # (CREATE TYPE IF NOT EXISTS) and a no-op on SQLite.
+    bind = op.get_bind()
+    media_asset_kind = postgresql.ENUM("audio", "image", name="media_asset_kind", create_type=False)
+    media_asset_kind.create(bind, checkfirst=True)
+
+    practice_content_type = postgresql.ENUM(
+        "question", "text", "audio", "image", name="practice_content_type", create_type=False
+    )
+    practice_content_type.create(bind, checkfirst=True)
+
+    practice_periodicity_type = postgresql.ENUM(
+        "every_n_hours", "fixed_times", name="practice_periodicity_type", create_type=False
+    )
+    practice_periodicity_type.create(bind, checkfirst=True)
+
     # --- media_assets ---
     op.create_table(
         "media_assets",
         sa.Column("id", postgresql.UUID(as_uuid=True), nullable=False),
         sa.Column(
             "kind",
-            sa.Enum("audio", "image", name="media_asset_kind"),
+            postgresql.ENUM("audio", "image", name="media_asset_kind", create_type=False),
             nullable=False,
         ),
         sa.Column("storage_path", sa.String(length=512), nullable=True),
@@ -55,14 +71,26 @@ def upgrade() -> None:
         sa.Column("name", sa.String(length=120), nullable=False),
         sa.Column(
             "content_type",
-            sa.Enum("question", "text", "audio", "image", name="practice_content_type"),
+            postgresql.ENUM(
+                "question",
+                "text",
+                "audio",
+                "image",
+                name="practice_content_type",
+                create_type=False,
+            ),
             nullable=False,
         ),
         sa.Column("content", sa.Text(), nullable=True),
         sa.Column("media_asset_id", postgresql.UUID(as_uuid=True), nullable=True),
         sa.Column(
             "periodicity_type",
-            sa.Enum("every_n_hours", "fixed_times", name="practice_periodicity_type"),
+            postgresql.ENUM(
+                "every_n_hours",
+                "fixed_times",
+                name="practice_periodicity_type",
+                create_type=False,
+            ),
             nullable=False,
         ),
         sa.Column("interval_hours", sa.Integer(), nullable=True),
