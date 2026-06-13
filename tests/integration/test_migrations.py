@@ -10,6 +10,7 @@ migrations against the real engine ensures that column types, server defaults,
 and constraints are rendered correctly for Postgres.
 """
 
+import asyncio
 import os
 
 import pytest
@@ -56,10 +57,12 @@ def _run_alembic_upgrade_sync(db_url: str) -> None:
 
 
 async def _run_alembic_upgrade(db_url: str) -> None:
-    """Run ``alembic upgrade head`` programmatically against *db_url*."""
-    # Alembic's command.upgrade is synchronous; run it directly since pytest
-    # asyncio_mode="auto" does not enforce a strict event-loop separation here.
-    _run_alembic_upgrade_sync(db_url)
+    """Run ``alembic upgrade head`` programmatically against *db_url*.
+
+    Delegates to a thread so that alembic/env.py's ``asyncio.run()`` call does
+    not collide with the already-running pytest-asyncio event loop.
+    """
+    await asyncio.to_thread(_run_alembic_upgrade_sync, db_url)
 
 
 @pytest.mark.asyncio
