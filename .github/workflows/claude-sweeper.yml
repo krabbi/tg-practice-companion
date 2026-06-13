@@ -14,7 +14,7 @@ concurrency:
 
 jobs:
   sweep:
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     timeout-minutes: 120
     steps:
       - uses: anthropics/claude-code-action@v1
