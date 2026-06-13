@@ -40,10 +40,17 @@ async def pg_engine():
     # be dropped explicitly; IF EXISTS keeps this a no-op on SQLite.
     async with engine.begin() as conn:
         await conn.execute(text("DROP TABLE IF EXISTS alembic_version"))
+        # M2 journal tables (children of practices / journal_entries) first.
+        await conn.execute(text("DROP TABLE IF EXISTS self_assessments"))
+        await conn.execute(text("DROP TABLE IF EXISTS journal_entries"))
+        await conn.execute(text("DROP TABLE IF EXISTS pending_prompts"))
         await conn.execute(text("DROP TABLE IF EXISTS practice_sends"))
         await conn.execute(text("DROP TABLE IF EXISTS practices"))
         await conn.execute(text("DROP TABLE IF EXISTS media_assets"))
         await conn.execute(text("DROP TABLE IF EXISTS users"))
+        await conn.execute(text("DROP TYPE IF EXISTS assessment_set_via"))
+        await conn.execute(text("DROP TYPE IF EXISTS entry_source"))
+        await conn.execute(text("DROP TYPE IF EXISTS prompt_kind"))
         await conn.execute(text("DROP TYPE IF EXISTS practice_periodicity_type"))
         await conn.execute(text("DROP TYPE IF EXISTS practice_content_type"))
         await conn.execute(text("DROP TYPE IF EXISTS media_asset_kind"))
