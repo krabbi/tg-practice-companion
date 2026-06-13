@@ -99,7 +99,9 @@ DateTime); SQLite shims are documented in `tests/conftest.py` when they appear.
 - Use `MagicMock(spec=ClassName)` — the `spec` catches attribute typos at test time.
 - Use `AsyncMock` for all `async def` methods.
 - Never use real API keys, tokens, or production DB in tests.
-- Coverage target: **≥ 80%** on all new code (once `bot/` exists). Run with `make coverage`.
+- Coverage target: **≥ 80% per file** on all `bot/` source files (once `bot/` exists).
+  Run with `make coverage` — this runs both the overall ≥ 80% pytest threshold AND
+  `scripts/check_coverage.py` which fails if any individual `bot/` file is below 80%.
 - `make test` for quick iteration (no coverage threshold); CI uses the same bootstrap-skip
   logic as the agents.
 
@@ -109,7 +111,7 @@ DateTime); SQLite shims are documented in `tests/conftest.py` when they appear.
 
 ```bash
 make test        # fast, no coverage threshold
-make coverage    # with --cov, fails if < 80% (meaningful once bot/ has modules)
+make coverage    # pytest --cov + scripts/check_coverage.py per-file gate (≥ 80% per file)
 pytest tests/unit/test_foo.py -v   # single file
 pytest -k "test_name" -v           # single test
 pytest --collect-only              # sanity: conftest imports cleanly (bootstrap check)

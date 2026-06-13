@@ -115,12 +115,16 @@ occasional luxury, not a routine step.
 ```bash
 make format    # ruff format .
 make lint      # ruff check .
-make coverage  # pytest --cov; fails if coverage < 80%
+make coverage  # pytest --cov + per-file gate; fails if ANY bot/ file < 80%
 ```
 
-**Gate honesty:** the ruff gate is active from day one. The test/coverage gate (≥ 80%)
-activates once the `bot/` package has real modules — until then coder and pr-reviewer
+**Gate honesty:** the ruff gate is active from day one. The test/coverage gate (≥ 80% **per
+file**) activates once the `bot/` package has real modules — until then coder and pr-reviewer
 skip coverage commands entirely (bootstrap bypass, see the agent files).
+
+The per-file gate is enforced by `scripts/check_coverage.py` (parses `coverage.json`,
+exits non-zero if any `bot/` file is below 80%). Both the overall ≥ 80% threshold
+(`--cov-fail-under=80`) and the per-file gate run together in `make coverage` and CI.
 
 ---
 
