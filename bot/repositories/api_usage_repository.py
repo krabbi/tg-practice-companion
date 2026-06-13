@@ -25,9 +25,7 @@ class ApiUsageRepository:
 
     async def get_by_id(self, log_id: uuid.UUID) -> ApiUsageLog | None:
         """Return the ApiUsageLog with the given id, or None."""
-        result = await self._session.execute(
-            select(ApiUsageLog).where(ApiUsageLog.id == log_id)
-        )
+        result = await self._session.execute(select(ApiUsageLog).where(ApiUsageLog.id == log_id))
         return result.scalar_one_or_none()
 
     async def sum_cost_since(self, since: datetime) -> Decimal:
