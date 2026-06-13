@@ -348,6 +348,23 @@ All fields are loaded from environment variables (or `.env` file) via `pydantic-
 | `jwt_secret` | `JWT_SECRET` | `str` | `""` | Stage-2 stub; unused in Stage 1 |
 | `cors_origins` | `CORS_ORIGINS` | `list[str]` | `[]` | Stage-2 stub; unused in Stage 1 |
 
+## CI automation (Autobot v2)
+
+The repository uses a 7-workflow label-driven pipeline (`feat/autobot-v2-pipeline`, issue #36)
+that runs the full implement-task cycle autonomously in GitHub Actions:
+
+```
+claude-issue / claude-sweeper  →  claude-pr-review  →  claude-pr-fix (up to 5 rounds)
+  →  claude-pr-product-review  →  claude-pr-product-fix (up to 5 rounds)
+  →  claude-pr-merge
+```
+
+All worker jobs share `concurrency: group: claude-worker`. Routing is done via PR/issue
+labels using the fine-grained PAT secret `AUTOMATION_TOKEN`. The merge gate requires
+named check runs `lint` AND `test` to have conclusion `success`; `skipped`/`neutral`
+(e.g. `build-push` on PRs) are non-blocking. Full operational details and the dry-run
+procedure are in `docs/operations.md` → "Autobot v2" section.
+
 ## CI / test environment variables
 
 | Env var | Where used | Notes |

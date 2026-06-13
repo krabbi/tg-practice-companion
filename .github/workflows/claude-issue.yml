@@ -34,6 +34,7 @@ jobs:
         with:
           fetch-depth: 0
       - uses: anthropics/claude-code-action@v1
+        id: claude
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           prompt: |
@@ -51,3 +52,35 @@ jobs:
           claude_args: |
             --max-turns 50
             --allowedTools "Bash,Edit,Write,Read,Glob,Grep,MultiEdit"
+
+      # Post-agent verification: find the PR opened for this issue.
+      # conclusion:success on the action does NOT mean the agent succeeded —
+      # the action swallows is_error. We verify by checking a real artifact.
+      - name: Verify PR was created
+        env:
+          GH_TOKEN: ${{ secrets.AUTOMATION_TOKEN }}
+        run: |
+          ISSUE_NUMBER="${{ github.event.issue.number }}"
+          PR_URL=$(gh pr list --state open --search "Closes #${ISSUE_NUMBER}" --json url --jq '.[0].url' 2>/dev/null || true)
+          if [ -z "$PR_URL" ]; then
+            # Try searching by issue reference in body
+            PR_URL=$(gh pr list --state open --json url,body --jq ".[] | select(.body | test(\"#${ISSUE_NUMBER}\")) | .url" 2>/dev/null | head -1 || true)
+          fi
+          if [ -z "$PR_URL" ]; then
+            gh issue comment "${ISSUE_NUMBER}" --body "[AUTOBOT ERROR] The coder agent ran but no PR was found for issue #${ISSUE_NUMBER}. Manual intervention required."
+            gh issue edit "${ISSUE_NUMBER}" --add-label "needs-human"
+            exit 1
+          fi
+          echo "PR found: ${PR_URL}"
+          echo "PR_URL=${PR_URL}" >> "$GITHUB_ENV"
+
+      # Tail: set needs-code-review on the PR and remove claude-ready from the
+      # issue using the PAT so the label change re-triggers the review workflow.
+      - name: Route to code review
+        env:
+          GH_TOKEN: ${{ secrets.AUTOMATION_TOKEN }}
+        run: |
+          ISSUE_NUMBER="${{ github.event.issue.number }}"
+          PR_NUMBER=$(echo "${PR_URL}" | grep -oE '[0-9]+$')
+          gh pr edit "${PR_NUMBER}" --add-label "needs-code-review"
+          gh issue edit "${ISSUE_NUMBER}" --remove-label "claude-ready" || true

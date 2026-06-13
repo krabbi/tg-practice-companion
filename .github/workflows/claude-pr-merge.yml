@@ -1,0 +1,150 @@
+name: Claude PR merge
+
+# Triggered when a PR is labeled 'product-approved'.
+# ALL bash — no agent. Verifies CI checks (lint + test must be success;
+# skipped/neutral non-blocking per F3), waits for pending checks, then
+# squash-merges and closes the linked issue via closingIssuesReferences (F7).
+on:
+  pull_request:
+    types: [labeled]
+
+concurrency:
+  group: claude-worker
+  cancel-in-progress: false
+
+jobs:
+  merge:
+    if: github.event.label.name == 'product-approved'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+      actions: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # F3: wait for CI checks to complete, then verify lint and test passed.
+      # skipped/neutral conclusions are non-blocking (build-push is skipped on PRs).
+      - name: Wait for and verify CI checks
+        env:
+          GH_TOKEN: ${{ secrets.AUTOMATION_TOKEN }}
+        run: |
+          PR_NUMBER="${{ github.event.pull_request.number }}"
+          HEAD_SHA="${{ github.event.pull_request.head.sha }}"
+
+          echo "Waiting for CI checks on SHA: ${HEAD_SHA}"
+
+          # Poll until all required checks are no longer pending/queued/in_progress.
+          # Timeout after 20 minutes (120 x 10s polls).
+          MAX_POLLS=120
+          POLL=0
+          while [ $POLL -lt $MAX_POLLS ]; do
+            POLL=$((POLL + 1))
+
+            # Fetch check runs for the head SHA
+            CHECK_JSON=$(gh api "repos/${{ github.repository }}/commits/${HEAD_SHA}/check-runs" \
+              --jq '.check_runs' 2>/dev/null || echo "[]")
+
+            # Count checks still in progress
+            PENDING=$(echo "$CHECK_JSON" | \
+              jq '[.[] | select(.status == "queued" or .status == "in_progress")] | length')
+
+            echo "Poll ${POLL}/${MAX_POLLS}: ${PENDING} check(s) still pending..."
+
+            if [ "$PENDING" -eq 0 ]; then
+              echo "All checks completed."
+              break
+            fi
+
+            if [ $POLL -ge $MAX_POLLS ]; then
+              gh pr comment "${PR_NUMBER}" --body "[AUTOBOT ERROR] CI checks timed out after 20 minutes waiting for completion. Setting needs-human for manual review."
+              gh pr edit "${PR_NUMBER}" --add-label "needs-human"
+              exit 1
+            fi
+
+            sleep 10
+          done
+
+          # Verify lint and test checks passed (success required; skipped = non-blocking).
+          CHECK_JSON=$(gh api "repos/${{ github.repository }}/commits/${HEAD_SHA}/check-runs" \
+            --jq '.check_runs' 2>/dev/null || echo "[]")
+
+          LINT_CONCLUSION=$(echo "$CHECK_JSON" | jq -r '.[] | select(.name == "lint") | .conclusion' | head -1)
+          TEST_CONCLUSION=$(echo "$CHECK_JSON" | jq -r '.[] | select(.name == "test") | .conclusion' | head -1)
+
+          echo "lint conclusion: ${LINT_CONCLUSION}"
+          echo "test conclusion: ${TEST_CONCLUSION}"
+
+          FAILED=false
+
+          if [ "$LINT_CONCLUSION" != "success" ] && [ "$LINT_CONCLUSION" != "skipped" ] && [ "$LINT_CONCLUSION" != "neutral" ]; then
+            echo "FAIL: lint check conclusion is '${LINT_CONCLUSION}' (required: success)"
+            FAILED=true
+          fi
+
+          if [ "$TEST_CONCLUSION" != "success" ] && [ "$TEST_CONCLUSION" != "skipped" ] && [ "$TEST_CONCLUSION" != "neutral" ]; then
+            echo "FAIL: test check conclusion is '${TEST_CONCLUSION}' (required: success)"
+            FAILED=true
+          fi
+
+          # If lint or test are missing entirely (not yet registered), treat as failure.
+          if [ -z "$LINT_CONCLUSION" ]; then
+            echo "FAIL: lint check not found"
+            FAILED=true
+          fi
+          if [ -z "$TEST_CONCLUSION" ]; then
+            echo "FAIL: test check not found"
+            FAILED=true
+          fi
+
+          if [ "$FAILED" = "true" ]; then
+            BODY="[AUTOBOT ERROR] CI checks failed or not found. Cannot merge. lint: ${LINT_CONCLUSION}, test: ${TEST_CONCLUSION}. Setting needs-human for manual review."
+            gh pr comment "${PR_NUMBER}" --body "${BODY}"
+            gh pr edit "${PR_NUMBER}" --add-label "needs-human"
+            exit 1
+          fi
+
+          echo "CI gate passed: lint=${LINT_CONCLUSION}, test=${TEST_CONCLUSION}"
+
+      # Squash-merge the PR.
+      - name: Squash merge PR
+        env:
+          GH_TOKEN: ${{ secrets.AUTOMATION_TOKEN }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          PR_NUMBER="${{ github.event.pull_request.number }}"
+
+          gh pr merge "${PR_NUMBER}" \
+            --squash \
+            --delete-branch \
+            --subject "${PR_TITLE}" \
+            --body "Auto-merged by Autobot v2 after lint+test CI gate passed and product-approved."
+
+          echo "PR #${PR_NUMBER} squash-merged."
+
+      # F7: close the linked issue via closingIssuesReferences (not body grep).
+      - name: Close linked issues
+        env:
+          GH_TOKEN: ${{ secrets.AUTOMATION_TOKEN }}
+        run: |
+          PR_NUMBER="${{ github.event.pull_request.number }}"
+
+          # Use closingIssuesReferences from the GraphQL API (F7).
+          ISSUE_NUMBERS=$(gh pr view "${PR_NUMBER}" \
+            --json closingIssuesReferences \
+            --jq '.closingIssuesReferences[].number' 2>/dev/null || true)
+
+          if [ -z "$ISSUE_NUMBERS" ]; then
+            echo "No closing issue references found for PR #${PR_NUMBER} — nothing to close."
+          else
+            for ISSUE_NUM in $ISSUE_NUMBERS; do
+              echo "Closing issue #${ISSUE_NUM}..."
+              gh issue close "${ISSUE_NUM}" \
+                --comment "Implemented and merged in PR #${PR_NUMBER} by Autobot v2." \
+                || echo "Warning: could not close issue #${ISSUE_NUM} (may already be closed)"
+            done
+          fi

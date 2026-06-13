@@ -72,6 +72,121 @@
 
 ---
 
+## Autobot v2 — полностью автономный пайплайн (issue #36)
+
+Autobot v2 расширяет автоматику до полного цикла: кодер открывает PR, ревью кода,
+исправления, ревью продукта, исправления документации, merge — всё без участия оператора.
+Человек нужен только в исключительных ситуациях (метка `needs-human`).
+
+### Машина состояний (метки на PR)
+
+```
+[issue: claude-ready]
+        │
+        ▼ (claude-issue / claude-sweeper)
+[PR: needs-code-review]
+        │
+        ▼ (claude-pr-review)
+        ├─ CHANGES_REQUESTED → [PR: code-changes-requested]
+        │                              │
+        │               (claude-pr-fix, до 5 раундов)
+        │                              │
+        │                              └──────────────────┐
+        │                                                  │
+        └─ APPROVED → [PR: code-approved]                 │
+                              │                            │
+                              ▼ (claude-pr-product-review) │
+                              ├─ user_guide.md не менялся  │
+                              │   → [PR: product-approved] │
+                              │                            │
+                              ├─ CHANGES_REQUESTED         │
+                              │   → [PR: product-changes-requested]
+                              │           │
+                              │   (claude-pr-product-fix, до 5 раундов)
+                              │           │
+                              │           └── → [PR: needs-code-review] ──┘
+                              │
+                              └─ APPROVED → [PR: product-approved]
+                                                    │
+                                                    ▼ (claude-pr-merge)
+                                              squash merge + close issue
+```
+
+### 7 воркфлоу
+
+| Файл | Триггер | Что делает |
+|---|---|---|
+| `claude-issue.yml` | issue labeled `claude-ready` | Агент-кодер решает задачу, открывает PR; tail ставит `needs-code-review`, снимает `claude-ready` |
+| `claude-sweeper.yml` | schedule 6ч / workflow_dispatch | Подбирает накопившиеся `claude-ready`-issues и застрявшие; то же tail |
+| `claude-pr-review.yml` | PR labeled `needs-code-review` | Агент-ревьюер читает diff, постит ревью + hidden-маркер вердикта; bash ставит `code-approved` или `code-changes-requested` |
+| `claude-pr-fix.yml` | PR labeled `code-changes-requested` | Счётчик раундов (F2); агент-кодер исправляет; bash ставит `needs-code-review` |
+| `claude-pr-product-review.yml` | PR labeled `code-approved` | Если `docs/user_guide.md` не менялся — `product-approved` сразу; иначе агент product-manager + вердикт |
+| `claude-pr-product-fix.yml` | PR labeled `product-changes-requested` | Счётчик раундов (F2); агент-кодер правит docs; bash ставит `needs-code-review` |
+| `claude-pr-merge.yml` | PR labeled `product-approved` | Только bash: ждёт CI, проверяет lint+test, squash-merge, закрывает issue через `closingIssuesReferences` |
+
+### Два независимых счётчика раундов (F2)
+
+Счётчики считают hidden-маркерные комментарии (append-only), а не правки тела PR.
+
+| Счётчик | Маркер в комментарии | Ограничение |
+|---|---|---|
+| Раунды code-fix | `<!-- autobot:code-fix-round -->` | 5 раундов → `needs-human` |
+| Раунды product-fix | `<!-- autobot:product-fix-round -->` | 5 раундов → `needs-human` |
+
+При достижении лимита воркфлоу постит комментарий `[AUTOBOT]`, ставит метку `needs-human`
+и останавливается. Ни один маршрут не продолжается автоматически после `needs-human`.
+
+### Merge gate (F3)
+
+`claude-pr-merge.yml` требует, чтобы check runs **`lint` и `test`** завершились со статусом
+`success`. Статусы `skipped` и `neutral` не блокируют (джоб `build-push` пропускается на
+PRах). Воркфлоу опрашивает GitHub API каждые 10 секунд, таймаут 20 минут. При красных
+чеках или таймауте — комментарий `[AUTOBOT ERROR]` + `needs-human` + `exit 1`.
+
+### Где живёт AUTOMATION_TOKEN (F1)
+
+Секрет `AUTOMATION_TOKEN` — fine-grained PAT с правами на содержимое и метки репозитория.
+Создаётся оператором один раз: Settings → Secrets and variables → Actions → `AUTOMATION_TOKEN`.
+Все операции с метками (`gh pr edit --add-label / --remove-label`) используют этот PAT через
+`GH_TOKEN: ${{ secrets.AUTOMATION_TOKEN }}`, чтобы label-change re-trigger отработал корректно.
+
+Секрет `CLAUDE_CODE_OAUTH_TOKEN` используется только для аутентификации `claude-code-action`.
+Агентские задания не делают операций с метками напрямую — это делает post-agent bash с PAT.
+
+### Post-agent bash verification (cross-cutting)
+
+Каждый джоб с агентом имеет шаг verification после `claude-code-action`. Причина:
+`conclusion: success` в `claude-code-action` не означает, что агент успешно выполнил задачу —
+`is_error` не проксируется. Verification проверяет реальный артефакт (PR создан, маркер-комментарий
+присутствует). При неудаче: комментарий `[AUTOBOT ERROR]` + `needs-human` + `exit 1`.
+
+### Процедура dry-run (оператор, после merge, F6)
+
+**Важно:** label-triggered воркфлоу срабатывают только с default branch (main). Не запускай
+dry-run до merge Autobot v2 в main.
+
+1. Создай throwaway-issue с простым no-op заданием (например, «добавить комментарий в README»).
+2. Поставь метку `claude-ready` на issue.
+3. Следи за прогрессом: Actions → каждый воркфлоу должен отработать по цепочке.
+4. Проверь финальный merge и закрытие issue.
+5. Только после успешного dry-run запускай реальный #28.
+
+### Метки (все 8 меток уже созданы)
+
+| Метка | Смысл |
+|---|---|
+| `claude-ready` | Opt-in оператора |
+| `claude-in-progress` | Замок очереди (кодер работает) |
+| `needs-code-review` | PR готов к code review |
+| `code-changes-requested` | Ревьюер запросил правки |
+| `code-approved` | Code review пройден |
+| `needs-product-review` | (зарезервировано, не используется в v2) |
+| `product-changes-requested` | Product-manager запросил правки docs |
+| `product-approved` | Product review пройден → merge |
+| `needs-human` | Автоматика остановилась, нужен оператор |
+
+---
+
 ## Send-window boundary convention (M1)
 
 The scheduler tick enforces a **half-open interval `[send_window_start, send_window_end)`**
