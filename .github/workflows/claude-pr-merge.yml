@@ -49,13 +49,17 @@ jobs:
           while [ $POLL -lt $MAX_POLLS ]; do
             POLL=$((POLL + 1))
 
-            # Fetch check runs for the head SHA
-            CHECK_JSON=$(gh api "repos/${{ github.repository }}/commits/${HEAD_SHA}/check-runs" \
-              --jq '.check_runs' 2>/dev/null || echo "[]")
+            # Fetch the raw check-runs response. Do NOT use gh's --jq here: with
+            # `--jq '.check_runs'` gh unwraps the array and prints each element on
+            # its own line, so a second `jq '.[]'` receives loose objects (not an
+            # array) and dies with "Cannot index string with string". Fetch the
+            # whole object and index .check_runs locally (// [] guards a failed API
+            # call that falls back to '{}').
+            CHECK_JSON=$(gh api "repos/${{ github.repository }}/commits/${HEAD_SHA}/check-runs" 2>/dev/null || echo "{}")
 
             # Count checks still in progress
             PENDING=$(echo "$CHECK_JSON" | \
-              jq '[.[] | select(.status == "queued" or .status == "in_progress")] | length')
+              jq '[(.check_runs // [])[] | select(.status == "queued" or .status == "in_progress")] | length')
 
             echo "Poll ${POLL}/${MAX_POLLS}: ${PENDING} check(s) still pending..."
 
@@ -74,11 +78,12 @@ jobs:
           done
 
           # Verify lint and test checks passed (success required; skipped = non-blocking).
-          CHECK_JSON=$(gh api "repos/${{ github.repository }}/commits/${HEAD_SHA}/check-runs" \
-            --jq '.check_runs' 2>/dev/null || echo "[]")
+          # Raw response + local .check_runs indexing (see the polling step above for
+          # why gh's --jq must not unwrap the array here).
+          CHECK_JSON=$(gh api "repos/${{ github.repository }}/commits/${HEAD_SHA}/check-runs" 2>/dev/null || echo "{}")
 
-          LINT_CONCLUSION=$(echo "$CHECK_JSON" | jq -r '.[] | select(.name == "lint") | .conclusion' | head -1)
-          TEST_CONCLUSION=$(echo "$CHECK_JSON" | jq -r '.[] | select(.name == "test") | .conclusion' | head -1)
+          LINT_CONCLUSION=$(echo "$CHECK_JSON" | jq -r '(.check_runs // [])[] | select(.name == "lint") | .conclusion' | head -1)
+          TEST_CONCLUSION=$(echo "$CHECK_JSON" | jq -r '(.check_runs // [])[] | select(.name == "test") | .conclusion' | head -1)
 
           echo "lint conclusion: ${LINT_CONCLUSION}"
           echo "test conclusion: ${TEST_CONCLUSION}"
