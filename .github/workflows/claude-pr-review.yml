@@ -9,13 +9,21 @@ on:
   pull_request:
     types: [labeled]
 
-concurrency:
-  group: claude-worker
-  cancel-in-progress: false
-
 jobs:
   review:
     if: github.event.label.name == 'needs-code-review'
+    # Deterministic anti-race. All five PR-stage workflows subscribe to the same
+    # `labeled` event, so a single label fans out to five workflow runs. To stop
+    # them fighting over one concurrency slot (the bug that stranded #37/#39):
+    # only the stage whose label ACTUALLY matched joins the shared `claude-worker`
+    # group — which serialises real Claude agents (subscription-cap protection).
+    # Every other fanned-out stage gets a unique throwaway group and so can never
+    # cancel the matching stage's queued run. This holds regardless of whether an
+    # if-skipped job claims a concurrency slot (an undocumented GitHub detail), so
+    # the fix does not depend on that behaviour.
+    concurrency:
+      group: "${{ github.event.label.name == 'needs-code-review' && 'claude-worker' || format('claude-skip-{0}', github.run_id) }}"
+      cancel-in-progress: false
     runs-on: ubuntu-latest
     timeout-minutes: 120
     permissions:

@@ -9,13 +9,17 @@ on:
   pull_request:
     types: [labeled]
 
-concurrency:
-  group: claude-worker
-  cancel-in-progress: false
-
 jobs:
   fix:
     if: github.event.label.name == 'code-changes-requested'
+    # Deterministic anti-race (see claude-pr-review.yml for the full rationale):
+    # only the stage whose label matched joins the shared `claude-worker` group
+    # (serialises real Claude agents — subscription-cap protection); every other
+    # fanned-out stage gets a unique throwaway group and cannot cancel the
+    # matching stage's queued run.
+    concurrency:
+      group: "${{ github.event.label.name == 'code-changes-requested' && 'claude-worker' || format('claude-skip-{0}', github.run_id) }}"
+      cancel-in-progress: false
     runs-on: ubuntu-latest
     timeout-minutes: 120
     permissions:

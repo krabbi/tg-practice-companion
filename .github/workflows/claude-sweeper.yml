@@ -8,12 +8,15 @@ on:
     - cron: "0 */6 * * *"
   workflow_dispatch:
 
-concurrency:
-  group: claude-worker # strictly one task at a time, shared with claude-issue
-  cancel-in-progress: false
-
 jobs:
   sweep:
+    # Job-level concurrency keeps this in the shared claude-worker group
+    # (strictly one task at a time, shared with claude-issue and the PR stages
+    # — subscription-cap protection) while matching the other workflows so the
+    # cross-stage cancellation race cannot recur.
+    concurrency:
+      group: claude-worker
+      cancel-in-progress: false
     runs-on: ubuntu-latest
     timeout-minutes: 120
     # claude-code-action needs id-token:write for OIDC auth; the agent also

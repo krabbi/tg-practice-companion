@@ -8,13 +8,19 @@ on:
   issues:
     types: [opened, labeled]
 
-concurrency:
-  group: claude-worker # strictly one task at a time, shared with the sweeper
-  cancel-in-progress: false
-
 jobs:
   solve:
     if: contains(github.event.issue.labels.*.name, 'claude-ready')
+    # Deterministic anti-race (see claude-pr-review.yml). This workflow fires on
+    # issues opened/labeled; only an issue that actually carries claude-ready
+    # joins the shared `claude-worker` group (strictly one Claude agent at a
+    # time, shared with the sweeper and PR stages — subscription-cap protection).
+    # Any other issue event gets a unique throwaway group so it cannot cancel a
+    # queued real task. Checks the label set (not github.event.label) so it is
+    # correct for both `opened` and `labeled` events.
+    concurrency:
+      group: "${{ contains(github.event.issue.labels.*.name, 'claude-ready') && 'claude-worker' || format('claude-skip-{0}', github.run_id) }}"
+      cancel-in-progress: false
     runs-on: ubuntu-latest
     timeout-minutes: 120
     # claude-code-action needs id-token:write for OIDC auth; the agent also
