@@ -69,6 +69,10 @@ baseline — never update it; user-facing changes go to `docs/user_guide.md`.
 
 ### 7. Drive the PR to merge
 
+**If the invoking prompt says "do not merge" or that the orchestrator owns review/merge —
+SKIP this entire step: create the PR, return its URL, and stop. That instruction always
+wins over this workflow.**
+
 **NEVER merge without explicit pr-reviewer APPROVED verdict. This is a hard rule — no exceptions.**
 
 After creating the PR:
@@ -76,7 +80,10 @@ After creating the PR:
 2. If `CHANGES_REQUESTED` — fix every blocking issue, push, run `gh pr diff <PR_NUMBER>` again, and re-invoke pr-reviewer with the updated diff.
 3. If `APPROVED` and the PR changes `docs/user_guide.md` — also invoke the **product-manager** agent for product acceptance review.
 4. If `PRODUCT CHANGES REQUESTED` — fix, push, and go back to step 1.
-5. Only after explicit **APPROVED** (and **PRODUCT APPROVED** if needed) — merge: `gh pr merge --squash --delete-branch`.
+5. Only after explicit **APPROVED** (and **PRODUCT APPROVED** if needed) — wait for the
+   PR's CI checks to pass: `gh pr checks <PR_NUMBER> --watch --fail-fast`. Merging on a
+   pending or red CI is forbidden (local runs can skip CI-only tests, e.g. Postgres
+   migration tests). Only then merge: `gh pr merge --squash --delete-branch`.
 6. After merging — close the issue: `gh issue close <N> --comment "Implemented in PR #<pr>."` if not closed automatically.
 
 ## Consulting the product-manager agent

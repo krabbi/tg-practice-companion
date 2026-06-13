@@ -91,6 +91,10 @@ occasional luxury, not a routine step.
 
 - Every PR needs `pr-reviewer` **APPROVED** before merge.
 - PRs that change `docs/user_guide.md` also need `product-manager` **PRODUCT APPROVED**.
+- The PR's CI checks must be **green** before merge (`gh pr checks <N> --watch --fail-fast`) —
+  local test runs can silently skip CI-only tests. Branch protection on `main` enforces this.
+- Merge is owned by the orchestrator (`/implement-task`); the coder agent merges only
+  when invoked standalone and never when told "do not merge".
 
 ### Product questions during implementation
 

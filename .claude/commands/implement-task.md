@@ -47,6 +47,8 @@ Include in the agent prompt:
 - Implement the task fully: code + tests + documentation
 - Create a PR with a Conventional Commits title and `closes #$ARGUMENTS` in the description
 - **Do not merge the PR** — return the PR URL
+- **Do not invoke pr-reviewer or run any review cycle yourself** — this command owns
+  review and merge (coder's own "drive the PR to merge" workflow is suspended here)
 - **Full issue text (include inline — coder must not re-fetch it via gh):**
 
 ```
@@ -69,6 +71,9 @@ Include in the agent prompt:
 - PR URL
 - Run every step in the checklist: ruff check, ruff format --check, the test gate
   (or the bootstrap bypass when it applies — see pr-reviewer.md), full checklist
+- **Issue completeness check:** include the full issue text (from Step 1) and require the
+  reviewer to verify every checklist item of the issue is covered by the diff. Any missing
+  item is a blocking issue → CHANGES_REQUESTED.
 - After review, post the verdict as a PR comment:
   - On approve: `gh pr review <PR_NUMBER> --approve --body "<review text>"`
   - On changes: `gh pr review <PR_NUMBER> --request-changes --body "<review text with issues>"`
@@ -138,11 +143,21 @@ Repeat until **PRODUCT APPROVED**.
 
 ---
 
-### Step 7 — Merge
+### Step 7 — Wait for green CI, then merge
 
 After receiving all required approvals:
 - **APPROVED** from pr-reviewer (mandatory)
 - **PRODUCT APPROVED** from product-manager (only if `docs/user_guide.md` was changed)
+
+**Wait for the PR's CI checks to finish — merging on a pending or red CI is forbidden**
+(local test runs can silently skip CI-only tests, e.g. the Postgres migration tests):
+
+```bash
+gh pr checks <PR_NUMBER> --watch --fail-fast
+```
+
+If any check fails: invoke the `coder` agent to fix it, push, and return to Step 3.
+Only when all checks pass:
 
 ```bash
 gh pr merge <PR_NUMBER> --squash --delete-branch
