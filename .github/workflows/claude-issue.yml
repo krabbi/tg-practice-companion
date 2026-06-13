@@ -44,4 +44,10 @@ jobs:
             оставь в issue комментарий со ссылкой на PR.
             Если issue непонятен — не выдумывай: задай уточняющие вопросы
             комментарием в issue и сними метку claude-in-progress.
-          claude_args: "--max-turns 50"
+          # By default the action allows only file ops + read-only git +
+          # comments, so the agent's gh/git/make/pytest calls were denied
+          # (run 27470462321: permission_denials_count=8, is_error=true).
+          # Bare "Bash" grants all shell commands; the rest let it edit files.
+          claude_args: |
+            --max-turns 50
+            --allowedTools "Bash,Edit,Write,Read,Glob,Grep,MultiEdit"
