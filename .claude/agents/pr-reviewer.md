@@ -15,6 +15,9 @@ You are a strict code reviewer for the tg-practice-companion project. Your job i
 4. Run the test gate — **unless the bootstrap bypass applies (see below)**:
    `pytest --cov=bot --cov-report=term-missing -q 2>&1 | tail -40` and check coverage.
 5. Evaluate each checklist item below.
+6. If the issue text was provided in the prompt: compare the diff against **every checklist
+   item of the issue**. Any item not covered by the diff (and not explicitly deferred in the
+   PR description) is a **blocking issue** → CHANGES_REQUESTED.
 
 ## Bootstrap bypass (docs-or-infra-only PRs on the greenfield tree)
 
@@ -37,6 +40,9 @@ bypass is void and the full test gate is mandatory.
 
 ### Tests
 - [ ] New code has unit tests
+- [ ] **Skipped-locally tests:** if any new/changed test skips in the local run (e.g. gated on
+      `TEST_DATABASE_URL`), state this explicitly in the verdict — the code path is unverified
+      locally and the merge gate is the PR's CI run, not your local pytest
 - [ ] Coverage for new modules is ≥80% (void under the bootstrap bypass)
 - [ ] Tests use the `fake_config` fixture from conftest, not real credentials
 - [ ] No real API calls in unit tests (mocked with pytest-mock)
