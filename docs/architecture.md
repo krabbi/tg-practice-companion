@@ -19,15 +19,42 @@ See `CLAUDE.md` for the layer rules and `.claude/coding-patterns.md` for code pa
 
 ## DB schema
 
-_Filled by M0 (`users`) and onward (`practices`, `media_assets`, `practice_sends`,
-`pending_prompts`, `journal_entries`, `self_assessments`, `morning_blessings`,
-`motivational_images`, `daily_ai_analyses`, `api_usage_logs`, `want_list_items`,
-`good_deeds`). One subsection per table with columns, indexes, and invariants._
+### `users` (M0)
+
+One row per whitelisted Telegram user.
+
+| Column | Type | Nullable | Default | Notes |
+|---|---|---|---|---|
+| `telegram_id` | `BigInteger` | NO | — | Primary key; Telegram user ID |
+| `timezone` | `String(64)` | YES | — | IANA timezone string, e.g. `"Europe/Minsk"`; null until first-run setup (M5) |
+| `language` | `String(8)` | NO | `"ru"` | UI language code |
+| `skip_until` | `Date` | YES | — | No practices sent until this date (AC-18 skip-day, M1) |
+| `tz_changed_at` | `DateTime(tz=True)` | YES | — | UTC instant of last timezone change; consumed by the backward-jump guard (M1/M5) |
+| `created_at` | `DateTime(tz=True)` | NO | `now()` | Row creation timestamp |
+| `updated_at` | `DateTime(tz=True)` | NO | `now()` | Last update timestamp |
+
+Migration: `alembic/versions/0001_initial_schema.py`
+
+_Further tables (`practices`, `media_assets`, `practice_sends`, `pending_prompts`,
+`journal_entries`, `self_assessments`, `morning_blessings`, `motivational_images`,
+`daily_ai_analyses`, `api_usage_logs`, `want_list_items`, `good_deeds`) added by
+M1–M6 milestones._
 
 ## Dependency injection
 
-_Filled by M0: `DependencyMiddleware` wiring — which services are built per-request,
-which are optional (injected as `None` without credentials)._
+### M0 wiring
+
+`bot/bot.py::create_dispatcher` wires all middleware and routers at startup:
+
+1. `AuthMiddleware(config.allowed_user_ids)` — registered as `dp.update.outer_middleware`;
+   drops updates from non-whitelisted users before any handler runs.
+2. `commands.router` — first registered router; handles `/start` and `/help`.
+
+Router registration order is load-bearing: the commands router must come before the
+catch-all journal router (M2) so that `/start` and `/help` are matched first.
+
+_`DependencyMiddleware` (per-request session + service injection) is added in M1 when
+the first service layer lands._
 
 ## Scheduler
 
@@ -37,7 +64,24 @@ off-tick dispatch of the morning analysis job._
 
 ## Config reference
 
-_Filled by M0: every `Config` field with type, default, and the env variable that sets it._
+All fields are loaded from environment variables (or `.env` file) via `pydantic-settings`.
+
+| Field | Env var | Type | Default | Notes |
+|---|---|---|---|---|
+| `telegram_bot_token` | `TELEGRAM_BOT_TOKEN` | `str` | required | Bot API token from @BotFather |
+| `anthropic_api_key` | `ANTHROPIC_API_KEY` | `str` | required | Anthropic API key |
+| `groq_api_key` | `GROQ_API_KEY` | `str` | `""` | Empty string disables voice transcription |
+| `database_url` | `DATABASE_URL` | `str` | required | Async SQLAlchemy URL, e.g. `postgresql+asyncpg://...` |
+| `allowed_user_ids` | `ALLOWED_USER_IDS` | `list[int]` | required | CSV of Telegram user IDs; exactly one in practice |
+| `monthly_cost_limit_usd` | `MONTHLY_COST_LIMIT_USD` | `float` | `10.0` | Monthly API spend cap (AC-16) |
+| `analysis_cost_cap_usd` | `ANALYSIS_COST_CAP_USD` | `float` | `0.05` | Per-run morning analysis cap (AC-11) |
+| `llm_model` | `LLM_MODEL` | `str` | `"claude-haiku-4-5-20251001"` | Pinned Anthropic model |
+| `whisper_model` | `WHISPER_MODEL` | `str` | `"whisper-large-v3-turbo"` | Pinned Groq Whisper model |
+| `default_language` | `DEFAULT_LANGUAGE` | `str` | `"ru"` | Bot UI language |
+| `send_window_start` | `SEND_WINDOW_START` | `int` | `6` | Start of send window (local hour, inclusive) |
+| `send_window_end` | `SEND_WINDOW_END` | `int` | `22` | End of send window (local hour, exclusive) |
+| `jwt_secret` | `JWT_SECRET` | `str` | `""` | Stage-2 stub; unused in Stage 1 |
+| `cors_origins` | `CORS_ORIGINS` | `list[str]` | `[]` | Stage-2 stub; unused in Stage 1 |
 
 ## Error handling
 
