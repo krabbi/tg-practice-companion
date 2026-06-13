@@ -66,3 +66,51 @@
   «Agent task» (`.github/ISSUE_TEMPLATE/agent-task.md`).
 - **Не давай авто-merge.** Просмотр PR — единственное место, где участие
   человека реально нужно.
+
+---
+
+## Send-window boundary convention (M1)
+
+The scheduler tick enforces a **half-open interval `[send_window_start, send_window_end)`**
+in the user's local wall time.
+
+| Boundary | Value (default) | Inclusive? | Notes |
+|---|---|---|---|
+| `send_window_start` | `6` (06:00) | **inclusive** — first valid slot | Configured via `SEND_WINDOW_START` env var |
+| `send_window_end` | `22` (22:00) | **exclusive** — last valid slot is 21:59 | Configured via `SEND_WINDOW_END` env var |
+
+### Rationale
+
+The README states "06:00–22:00". This is interpreted as `[06:00, 22:00)`:
+- A tick firing at **05:59** local is outside the window → no sends.
+- A tick firing at **06:00** local is inside the window → sends proceed.
+- A tick firing at **22:00** local is outside the window (exclusive upper bound) → no sends.
+- A tick firing at **21:59** local is inside the window (last valid slot) → sends proceed.
+
+### Practice configuration rule
+
+Fixed-time practices (`fixed_times` cadence) **must** be configured with `schedule_times`
+values strictly inside the window. Reference data:
+
+| Practice | Time | Inside `[06:00, 22:00)`? |
+|---|---|---|
+| Morning blessing | `06:00` | Yes (inclusive lower bound) |
+| Thought check-ins | `08:00`–`18:00` | Yes |
+| Night hypnosis | `20:00` | Yes |
+
+### Cadence phase is anchored to local midnight, not the send window
+
+For `every_n_hours` practices, the phase is anchored via `anchor_hour` against local
+midnight — **not** against `send_window_start`. Changing the send window only clips which
+slots are admitted; it never moves a practice's phase.
+
+Example: `interval_hours=4, anchor_hour=6` → due at local 02/06/10/14/18/22 every day.
+With the default window `[06:00, 22:00)`, admitted slots are 06/10/14/18.
+If the window is widened to `[05:00, 22:00)`, slot 02 is still not admitted (02 < 05),
+and slot 06 is now admitted regardless — phase is unchanged.
+
+### Seeding practices
+
+Use `python -m cli.seed practices content/practices.yaml` to load or update practice rows.
+The seed is idempotent (upserts by `name`). See `content/practices.example.yaml` for the
+full YAML schema and the reference daily cycle.

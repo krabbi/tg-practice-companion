@@ -19,6 +19,69 @@ See `CLAUDE.md` for the layer rules and `.claude/coding-patterns.md` for code pa
 
 ## DB schema
 
+### `media_assets` (M1)
+
+Owned media entity for audio/image practices. Stage 1 populates `telegram_file_id`; `storage_path` stays null until Stage 2 TMA upload flow.
+
+| Column | Type | Nullable | Default | Notes |
+|---|---|---|---|---|
+| `id` | `UUID` | NO | `uuid4()` | Primary key |
+| `kind` | `Enum(audio, image)` | NO | — | Media type |
+| `storage_path` | `String(512)` | YES | — | Object-store/filesystem path; null in Stage 1 |
+| `telegram_file_id` | `String(256)` | YES | — | Stored Telegram file ID for re-sending (AC-2) |
+| `mime` | `String(128)` | YES | — | MIME type, e.g. `audio/mpeg` |
+| `created_at` | `DateTime(tz=True)` | NO | `now()` | Row creation timestamp |
+| `updated_at` | `DateTime(tz=True)` | NO | `now()` | Last update timestamp |
+
+Invariant: at least one of `storage_path` / `telegram_file_id` must be non-null (enforced at the service layer).
+
+Migration: `alembic/versions/0002_practice_engine.py`
+
+---
+
+### `practices` (M1)
+
+One row per schedulable practice. Cadence and content are data; code is the engine.
+
+| Column | Type | Nullable | Default | Notes |
+|---|---|---|---|---|
+| `id` | `UUID` | NO | `uuid4()` | Primary key |
+| `name` | `String(120)` | NO | — | Human-readable identifier; used for idempotent seed upsert |
+| `content_type` | `Enum(question, text, audio, image)` | NO | — | Determines delivery method |
+| `content` | `Text` | YES | — | Body for `question`/`text` practices |
+| `media_asset_id` | `UUID FK→media_assets` | YES | — | Set for `audio`/`image` practices |
+| `periodicity_type` | `Enum(every_n_hours, fixed_times)` | NO | — | Cadence type |
+| `interval_hours` | `Integer` | YES | — | Used with `every_n_hours` |
+| `schedule_times` | `JSON` | YES | — | List of `"HH:MM"` strings for `fixed_times` |
+| `anchor_hour` | `Integer` | YES | `0` | Phase anchor against local midnight |
+| `anchor_minute` | `Integer` | YES | `0` | Minute offset within the anchor hour |
+| `active` | `Boolean` | NO | `true` | Inactive rows are never evaluated |
+| `start_date` | `DateTime` | YES | — | Practice not due before this date |
+| `end_date` | `DateTime` | YES | — | Practice not due after this date |
+| `sort_order` | `Integer` | NO | `0` | Display/delivery ordering |
+| `created_at` | `DateTime(tz=True)` | NO | `now()` | Row creation timestamp |
+| `updated_at` | `DateTime(tz=True)` | NO | `now()` | Last update timestamp |
+
+Index: `ix_practices_active(active)`
+
+---
+
+### `practice_sends` (M1)
+
+Idempotency dedup ledger. One row per `(practice_id, slot_key)` pair that has been successfully claimed and sent.
+
+| Column | Type | Nullable | Default | Notes |
+|---|---|---|---|---|
+| `id` | `UUID` | NO | `uuid4()` | Primary key |
+| `practice_id` | `UUID FK→practices` | NO | — | CASCADE on delete |
+| `user_id` | `BigInteger` | NO | — | Telegram user ID |
+| `slot_key` | `String(40)` | NO | — | `"YYYY-MM-DDTHH:MM"` local wall-time string |
+| `sent_at` | `DateTime(tz=True)` | NO | — | UTC instant of delivery |
+
+Unique constraint: `uq_practice_send(practice_id, slot_key)` — the idempotency guard.
+
+---
+
 ### `users` (M0)
 
 One row per whitelisted Telegram user.
@@ -53,14 +116,63 @@ M1–M6 milestones._
 Router registration order is load-bearing: the commands router must come before the
 catch-all journal router (M2) so that `/start` and `/help` are matched first.
 
-_`DependencyMiddleware` (per-request session + service injection) is added in M1 when
-the first service layer lands._
+### M1 additions
 
-## Scheduler
+`create_dispatcher` now accepts an optional `session_factory` parameter. When provided:
 
-_Filled by M1: single 60s tick job, slot claiming via `practice_sends` unique index,
-send-window convention `[06:00, 22:00)`, backward-tz-jump guard via `users.tz_changed_at`,
-off-tick dispatch of the morning analysis job._
+3. `DependencyMiddleware(session_factory, config)` — registered as `dp.update.middleware`;
+   opens one `AsyncSession` per update, builds all repositories and services, injects them
+   into the handler `data` dict, then closes the session after the handler returns.
+4. `skip_day.router` — registered after `commands.router`; handles `/skip_day` and the
+   `skip_day:confirm` inline callback.
+
+### Services (M1)
+
+| Service | File | Responsibility |
+|---|---|---|
+| `PracticeService` | `bot/services/practice_service.py` | Active practice queries, `due_now` evaluation |
+| `DeliveryService` | `bot/services/delivery_service.py` | Renders and sends a practice via Telegram Bot API |
+| `TimezoneService` | `bot/services/timezone_service.py` | Validate IANA timezone, persist, stamp `tz_changed_at` |
+| `SkipDayService` | `bot/services/skip_day_service.py` | Set `skip_until = local today`, commit |
+
+### Repositories (M1)
+
+| Repository | File | Responsibility |
+|---|---|---|
+| `UserRepository` | `bot/repositories/user_repository.py` | User CRUD; `get_first`, `get_by_telegram_id`, `save` |
+| `PracticeRepository` | `bot/repositories/practice_repository.py` | Practice + MediaAsset CRUD; `get_active_practices`, `get_by_name` |
+| `PracticeSendRepository` | `bot/repositories/practice_send_repository.py` | `try_claim` (insert-or-skip), `prune_older_than` |
+
+## Scheduler (M1)
+
+`bot/scheduler.py` — `start_scheduler(bot, session_factory, config)` registers two APScheduler jobs:
+
+### `practice_tick` (every 60 seconds)
+
+- `max_instances=1`, `coalesce=True`: a slow tick can never overlap itself; a missed minute collapses into one re-evaluation (no catch-up — spec-correct per README).
+- Reads the DB every run — nothing is materialized at boot. Data changes (new practice rows, timezone edits) take effect on the next minute without restart (AC-4, AC-18).
+- Flow per tick:
+  1. `now_utc = datetime.now(UTC)` → resolve user's local timezone → `local_now`.
+  2. Short-circuit if outside the send window `[send_window_start, send_window_end)`.
+  3. Short-circuit if `user.skip_until >= local_now.date()` (AC-5).
+  4. `practice_service.due_now(local_now)` → list of due practices.
+  5. For each practice: compute `slot_key = "YYYY-MM-DDTHH:MM"` → apply backward-tz-jump guard → `practice_send_repository.try_claim(...)` (insert-or-skip on unique index) → if claimed, commit, then `delivery_service.send(practice, user)`.
+
+### Send-window convention
+
+Half-open interval `[send_window_start, send_window_end)` in local wall time. Defaults: `06 ≤ hour < 22`. The `22:00` boundary is **exclusive** — last possible slot is `21:59`. See `docs/operations.md` for the full specification and rationale.
+
+### Backward-tz-jump guard
+
+Before claiming a slot, the tick converts `user.tz_changed_at` (UTC) into the current zone and refuses to claim any slot whose local wall-time precedes that instant. This prevents westward timezone jumps from replaying already-passed slots. Forward jumps skip slots with no catch-up.
+
+### Morning analysis dispatch seam
+
+The once-daily morning LLM analysis is never awaited inline inside `tick`. When due (M3), `tick` enqueues it as a separate one-shot APScheduler job (`run_morning_analysis`, `max_instances=1`). The dispatch seam is wired here; the job body lands in M3.
+
+### `housekeeping` (daily at 03:00 UTC)
+
+Prunes `practice_sends` rows older than 14 days to keep the ledger table bounded.
 
 ## Config reference
 

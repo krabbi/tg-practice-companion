@@ -1,0 +1,81 @@
+# Example practices YAML for cli/seed.py
+#
+# Run: python -m cli.seed practices content/practices.yaml
+#
+# Each entry is upserted by `name` (idempotent).
+# Required fields:   name, content_type, periodicity_type
+# Optional fields:   content, telegram_file_id, mime, interval_hours,
+#                    schedule_times, anchor_hour, anchor_minute,
+#                    active, sort_order
+#
+# content_type values:  question | text | audio | image
+# periodicity_type:     every_n_hours | fixed_times
+#
+# Send window is [06:00, 22:00) local — configure fixed_times strictly inside it.
+# Cadence phase for every_n_hours is anchored to local midnight via anchor_hour,
+# NOT to the send window boundary.
+#
+# Reference daily cycle from README:
+#   06:00 — morning blessing (text)
+#   08:00 — thought-registration question
+#   10:00 — thought-registration question
+#   12:00 — thought-registration question (CBT check-in)
+#   14:00 — motivational image
+#   18:00 — thought-registration question
+#   20:00 — night hypnosis audio
+#   Every 4h from 06:00 — short blessing text
+
+- name: Morning blessing
+  content_type: text
+  content: "Доброе утро! Сегодня у тебя есть всё необходимое, чтобы справиться с любой ситуацией. Ты молодец!"
+  periodicity_type: fixed_times
+  schedule_times: ["06:00"]
+  active: true
+  sort_order: 10
+
+- name: Hourly thought-registration question
+  content_type: question
+  content: "Какая мысль сейчас крутится у тебя в голове? Помогает ли она тебе двигаться к твоим целям?"
+  periodicity_type: every_n_hours
+  interval_hours: 4
+  anchor_hour: 8
+  anchor_minute: 0
+  active: true
+  sort_order: 20
+
+- name: CBT midday check-in
+  content_type: question
+  content: "Как ты себя чувствуешь прямо сейчас? Что ты думаешь о своём дне?"
+  periodicity_type: fixed_times
+  schedule_times: ["12:00"]
+  active: true
+  sort_order: 30
+
+- name: Motivational image
+  content_type: image
+  # telegram_file_id is populated by the operator after uploading the image to the bot
+  telegram_file_id: "AgACAgIAAxk..."
+  mime: "image/jpeg"
+  periodicity_type: fixed_times
+  schedule_times: ["14:00"]
+  active: true
+  sort_order: 40
+
+- name: Evening check-in
+  content_type: question
+  content: "Как прошёл твой день? Назови три вещи, за которые ты благодарна сегодня."
+  periodicity_type: fixed_times
+  schedule_times: ["18:00"]
+  active: true
+  sort_order: 50
+
+- name: Night hypnosis
+  content_type: audio
+  # telegram_file_id is populated by the operator after uploading the audio to the bot
+  telegram_file_id: "CQACAgIAAxk..."
+  mime: "audio/mpeg"
+  periodicity_type: fixed_times
+  # 20:00 is well inside the [06:00, 22:00) send window
+  schedule_times: ["20:00"]
+  active: true
+  sort_order: 60
