@@ -1,36 +1,59 @@
-"""Bootstrap conftest — self-contained while bot/ has no real modules.
+"""Root conftest — shared fixtures for unit and integration tests.
 
-`fake_config` is a stub defined here on purpose: importing `bot.config` or
-`bot.models.base` (the sibling-project pattern) would crash pytest collection
-with ImportError on the greenfield tree, before any bootstrap bypass runs.
+`fake_config` constructs the real bot.config.Config with safe test values so that
+every unit test uses the same field validation logic as production.
 
-Once `bot/config.py` lands (M0), replace `_StubConfig` with the real `Config`
-and add the `db_session` fixture (aiosqlite ``:memory:``) next to the first
-models. See `.claude/testing-guide.md`.
+`db_session` provides an aiosqlite :memory: session with all ORM tables created
+and dropped per test. Repository/integration tests use this fixture.
+SQLite shims: Enum renders as VARCHAR+CHECK, JSON as JSON1 text, Numeric returns
+float/str (compare with tolerance or cast). Migration tests (test_migrations.py)
+run against real Postgres 16 via a GitHub Actions service container.
 """
 
-from dataclasses import dataclass
-
 import pytest
+import pytest_asyncio
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
+from bot.config import Config
+from bot.models.base import Base
 
-@dataclass(frozen=True)
-class _StubConfig:
-    """Field names mirror the planned bot.config.Config (see issue M0)."""
-
-    telegram_bot_token: str = "1234567890:AAFakeTokenForTestingPurposesOnly"
-    anthropic_api_key: str = "sk-ant-fake-key-for-testing"
-    groq_api_key: str = ""
-    database_url: str = "sqlite+aiosqlite:///:memory:"
-    allowed_user_ids: tuple[int, ...] = (123456789,)
-    monthly_cost_limit_usd: float = 10.0
-    analysis_cost_cap_usd: float = 0.05
-    default_language: str = "ru"
-    send_window_start: int = 6
-    send_window_end: int = 22
+_TEST_DB_URL = "sqlite+aiosqlite:///:memory:"
 
 
 @pytest.fixture
-def fake_config() -> _StubConfig:
-    """Return a credentials-free config stub for unit tests."""
-    return _StubConfig()
+def fake_config() -> Config:
+    """Return a credentials-free Config instance for unit tests."""
+    return Config.model_validate(
+        {
+            "telegram_bot_token": "1234567890:AAFakeTokenForTestingPurposesOnly",
+            "anthropic_api_key": "sk-ant-fake-key-for-testing",
+            "groq_api_key": "",
+            "database_url": _TEST_DB_URL,
+            "allowed_user_ids": "123456789",
+            "monthly_cost_limit_usd": 10.0,
+            "analysis_cost_cap_usd": 0.05,
+            "default_language": "ru",
+            "send_window_start": 6,
+            "send_window_end": 22,
+        }
+    )
+
+
+@pytest_asyncio.fixture
+async def db_session() -> AsyncSession:  # type: ignore[misc]
+    """Yield an async SQLite :memory: session with all tables created.
+
+    Tables are created before the test and the engine is disposed after,
+    giving each test a clean isolated DB.
+    """
+    engine = create_async_engine(_TEST_DB_URL, echo=False)
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    async with factory() as session:
+        yield session
+
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.drop_all)
+    await engine.dispose()
