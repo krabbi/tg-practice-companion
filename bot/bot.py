@@ -6,7 +6,7 @@ from aiogram.enums import ParseMode
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from bot.config import Config
-from bot.handlers import commands, skip_day
+from bot.handlers import assessment, commands, journal, skip_day
 from bot.middlewares.auth import AuthMiddleware
 from bot.middlewares.dependency import DependencyMiddleware
 
@@ -39,8 +39,14 @@ def create_dispatcher(
     if session_factory is not None:
         dp.update.middleware(DependencyMiddleware(session_factory, config))
 
-    # Register routers in canonical order (order matters for M2 catch-all)
+    # Register routers in canonical order (order is load-bearing — see issue #4).
+    # 1. commands — /start, /help must match before the catch-all journal router
     dp.include_router(commands.create_router())
+    # 2. timezone_setup FSM router slot (reserved for M5 — not yet wired)
+    # 3. assessment callbacks + skip_day command/callback routers
+    dp.include_router(assessment.create_router())
     dp.include_router(skip_day.create_router())
+    # 4. journal F.text / F.voice catch-all LAST (StateFilter(None) yields to FSM)
+    dp.include_router(journal.create_router())
 
     return dp

@@ -98,10 +98,67 @@ One row per whitelisted Telegram user.
 
 Migration: `alembic/versions/0001_initial_schema.py`
 
-_Further tables (`practices`, `media_assets`, `practice_sends`, `pending_prompts`,
-`journal_entries`, `self_assessments`, `morning_blessings`, `motivational_images`,
+### `pending_prompts` (M2)
+
+Durable binding anchor (Decision B1). One row per outgoing question; consumed by the user's reply.
+
+| Column | Type | Nullable | Default | Notes |
+|---|---|---|---|---|
+| `id` | `UUID` | NO | `uuid4()` | Primary key |
+| `user_id` | `BigInteger` | NO | — | Telegram user ID |
+| `practice_id` | `UUID FK→practices` | YES | — | SET NULL on practice delete |
+| `kind` | `Enum(thought,good_deeds,want,other)` | NO | — | Determines whether a self-assessment is needed |
+| `telegram_message_id` | `BigInteger` | YES | — | message_id of the outgoing bot message; used for precise reply binding |
+| `consumed` | `Boolean` | NO | `false` | True once a reply has been bound and captured |
+| `clarify_sent` | `Boolean` | NO | `false` | True once a clarify question has been sent for this prompt's entry |
+| `created_at` | `DateTime(tz=True)` | NO | `now()` | Row creation timestamp |
+
+Index: `ix_pending_prompts_user_consumed_created(user_id, consumed, created_at)`
+
+Migration: `alembic/versions/0003_journal.py`
+
+---
+
+### `journal_entries` (M2)
+
+One row per user reply (typed or transcribed voice). Raw audio bytes are never stored (AC-7).
+
+| Column | Type | Nullable | Default | Notes |
+|---|---|---|---|---|
+| `id` | `UUID` | NO | `uuid4()` | Primary key |
+| `user_id` | `BigInteger` | NO | — | Telegram user ID |
+| `practice_id` | `UUID FK→practices` | YES | — | SET NULL on practice delete; null when no prompt was bound |
+| `text` | `Text` | NO | — | Typed message or Groq Whisper transcript |
+| `source` | `Enum(text,voice)` | NO | — | Origin of the content |
+| `created_at` | `DateTime(tz=True)` | NO | `now()` | Row creation timestamp |
+
+Index: `ix_journal_entries_user_created(user_id, created_at)`
+
+Migration: `alembic/versions/0003_journal.py`
+
+---
+
+### `self_assessments` (M2)
+
+One-to-one with `journal_entries`. Records whether the user believes a thought leads to their goals (AC-8). No LLM is used in this flow.
+
+| Column | Type | Nullable | Default | Notes |
+|---|---|---|---|---|
+| `id` | `UUID` | NO | `uuid4()` | Primary key |
+| `journal_entry_id` | `UUID FK→journal_entries` | NO | — | CASCADE on delete; unique |
+| `leads_to_goals` | `Boolean` | NO | — | User's self-assessment answer |
+| `set_via` | `Enum(button,clarify)` | NO | — | How the assessment was recorded |
+| `created_at` | `DateTime(tz=True)` | NO | `now()` | Row creation timestamp |
+
+Unique constraint: `uq_self_assessment_entry(journal_entry_id)`
+
+Migration: `alembic/versions/0003_journal.py`
+
+---
+
+_Further tables (`morning_blessings`, `motivational_images`,
 `daily_ai_analyses`, `api_usage_logs`, `want_list_items`, `good_deeds`) added by
-M1–M6 milestones._
+M3–M6 milestones._
 
 ## Dependency injection
 
@@ -126,22 +183,44 @@ catch-all journal router (M2) so that `/start` and `/help` are matched first.
 4. `skip_day.router` — registered after `commands.router`; handles `/skip_day` and the
    `skip_day:confirm` inline callback.
 
-### Services (M1)
+### M2 additions
+
+Router registration order is load-bearing (issue #4 Decision B1). Canonical order:
+
+1. `commands.router` — `/start`, `/help`
+2. *(slot reserved for `timezone_setup` FSM router — M5)*
+3. `assessment.router` — `assess:<id>:yes|no` callback queries
+4. `skip_day.router` — `/skip_day` command and `skip_day:confirm` callback
+5. `journal.router` — `F.text` / `F.voice` catch-all with `StateFilter(None)` (last)
+
+The journal catch-all carries `StateFilter(None)` so it yields whenever an FSM state is active (e.g. first-run timezone setup in M5).
+
+`DeliveryService` now accepts an optional `prompt_repo: PendingPromptRepository` parameter. When provided (the scheduler always provides it), every outgoing `question` practice writes a `pending_prompt` row capturing the Telegram `message_id`. The scheduler commits after successful delivery to persist the row.
+
+`TranscriptionService` is injected as `None` when `config.groq_api_key` is empty; handlers guard with `if transcription_service is None`.
+
+### Services (M1 + M2)
 
 | Service | File | Responsibility |
 |---|---|---|
 | `PracticeService` | `bot/services/practice_service.py` | Active practice queries, `due_now` evaluation |
-| `DeliveryService` | `bot/services/delivery_service.py` | Renders and sends a practice via Telegram Bot API |
+| `DeliveryService` | `bot/services/delivery_service.py` | Renders and sends a practice; writes `pending_prompt` for `question` practices |
 | `TimezoneService` | `bot/services/timezone_service.py` | Validate IANA timezone, persist, stamp `tz_changed_at` |
 | `SkipDayService` | `bot/services/skip_day_service.py` | Set `skip_until = local today`, commit |
+| `JournalService` | `bot/services/journal_service.py` | Capture replies: resolve binding, create `JournalEntry`, consume prompt |
+| `AssessmentService` | `bot/services/assessment_service.py` | Record `SelfAssessment`; `needs_clarify` guard for the sweep |
+| `TranscriptionService` | `bot/services/transcription_service.py` | Groq Whisper transcription; optional (None when key absent) |
 
-### Repositories (M1)
+### Repositories (M1 + M2)
 
 | Repository | File | Responsibility |
 |---|---|---|
 | `UserRepository` | `bot/repositories/user_repository.py` | User CRUD; `get_first`, `get_by_telegram_id`, `save` |
 | `PracticeRepository` | `bot/repositories/practice_repository.py` | Practice + MediaAsset CRUD; `get_active_practices`, `get_by_name` |
 | `PracticeSendRepository` | `bot/repositories/practice_send_repository.py` | `try_claim` (insert-or-skip), `prune_older_than` |
+| `PendingPromptRepository` | `bot/repositories/pending_prompt_repository.py` | `create`, `get_by_telegram_message_id`, `newest_unconsumed`, `mark_consumed`, `mark_clarify_sent` |
+| `JournalRepository` | `bot/repositories/journal_repository.py` | `create`, `get_by_id` |
+| `SelfAssessmentRepository` | `bot/repositories/self_assessment_repository.py` | `create`, `get_by_entry_id` |
 
 ## Scheduler (M1)
 
@@ -156,7 +235,7 @@ catch-all journal router (M2) so that `/start` and `/help` are matched first.
   2. Short-circuit if outside the send window `[send_window_start, send_window_end)`.
   3. Short-circuit if `user.skip_until >= local_now.date()` (AC-5).
   4. `practice_service.due_now(local_now)` → list of due practices.
-  5. For each practice: compute `slot_key = "YYYY-MM-DDTHH:MM"` → apply backward-tz-jump guard → `practice_send_repository.try_claim(...)` (insert-or-skip on unique index) → if claimed, commit, then `delivery_service.send(practice, user)`.
+  5. For each practice: compute `slot_key = "YYYY-MM-DDTHH:MM"` → apply backward-tz-jump guard → `practice_send_repository.try_claim(...)` (insert-or-skip on unique index) → if claimed, **first commit** (persists the claim), then `delivery_service.send(practice, user)` (writes `pending_prompt` for `question` practices via flush), then **second commit** (persists the `pending_prompt`).
 
 ### Send-window convention
 
@@ -203,8 +282,15 @@ All fields are loaded from environment variables (or `.env` file) via `pydantic-
 
 ## Error handling
 
-_Filled as domain exceptions appear in `bot/exceptions.py`: exception → where raised →
-what the user sees._
+All domain exceptions extend `PracticeCompanionError` in `bot/exceptions.py`.
+
+| Exception | Where raised | User sees |
+|---|---|---|
+| `TimezoneError` | `TimezoneService` | — (internal, M5) |
+| `DeliveryError` | `DeliveryService` | `t("delivery_error")` |
+| `MediaAssetError` | `DeliveryService._resolve_telegram_file_id` | logged, `DeliveryError` re-raised |
+| `JournalCaptureError` | `JournalService.capture` | `t("capture_failed")` |
+| `AssessmentError` | `AssessmentService.record` | `t("assessment_already_set")` |
 
 ## Cost accounting
 

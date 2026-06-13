@@ -15,3 +15,11 @@ class DeliveryError(PracticeCompanionError):
 
 class MediaAssetError(PracticeCompanionError):
     """Raised when a media asset is missing required fields."""
+
+
+class JournalCaptureError(PracticeCompanionError):
+    """Raised when a journal entry cannot be captured."""
+
+
+class AssessmentError(PracticeCompanionError):
+    """Raised when a self-assessment cannot be recorded."""

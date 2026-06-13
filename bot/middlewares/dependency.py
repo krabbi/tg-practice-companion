@@ -8,13 +8,19 @@ from aiogram.types import TelegramObject
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from bot.config import Config
+from bot.repositories.journal_repository import JournalRepository
+from bot.repositories.pending_prompt_repository import PendingPromptRepository
 from bot.repositories.practice_repository import PracticeRepository
 from bot.repositories.practice_send_repository import PracticeSendRepository
+from bot.repositories.self_assessment_repository import SelfAssessmentRepository
 from bot.repositories.user_repository import UserRepository
+from bot.services.assessment_service import AssessmentService
 from bot.services.delivery_service import DeliveryService
+from bot.services.journal_service import JournalService
 from bot.services.practice_service import PracticeService
 from bot.services.skip_day_service import SkipDayService
 from bot.services.timezone_service import TimezoneService
+from bot.services.transcription_service import TranscriptionService
 
 
 class DependencyMiddleware(BaseMiddleware):
@@ -41,12 +47,25 @@ class DependencyMiddleware(BaseMiddleware):
             user_repo = UserRepository(session)
             practice_repo = PracticeRepository(session)
             send_repo = PracticeSendRepository(session)
+            journal_repo = JournalRepository(session)
+            prompt_repo = PendingPromptRepository(session)
+            assessment_repo = SelfAssessmentRepository(session)
 
             # Services
             data["skip_day_service"] = SkipDayService(session, user_repo)
             data["timezone_service"] = TimezoneService(session, user_repo)
             data["practice_service"] = PracticeService(practice_repo)
             data["delivery_service"] = DeliveryService(data.get("bot") or data.get("event_bot"))
+            data["journal_service"] = JournalService(session, journal_repo, prompt_repo)
+            data["assessment_service"] = AssessmentService(
+                session, assessment_repo, journal_repo, prompt_repo
+            )
+
+            # Optional — injected as None when Groq credentials are missing
+            if self._config.groq_api_key:
+                data["transcription_service"] = TranscriptionService(self._config)
+            else:
+                data["transcription_service"] = None
 
             # Expose repos for handlers that need raw DB access (rare)
             data["user_repo"] = user_repo

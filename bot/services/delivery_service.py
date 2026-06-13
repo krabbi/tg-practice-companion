@@ -6,22 +6,39 @@ from aiogram import Bot
 
 from bot.exceptions import DeliveryError, MediaAssetError
 from bot.models.practice import Practice
+from bot.repositories.pending_prompt_repository import PendingPromptRepository
 
 logger = logging.getLogger(__name__)
+
+# Maps practice name suffixes / content_type to prompt kind.
+# For question practices with no special kind hint, default to "thought".
+_DEFAULT_PROMPT_KIND = "thought"
 
 
 class DeliveryService:
     """Renders and sends a practice to the user through the Telegram Bot API.
 
+    When *prompt_repo* is provided, every outgoing `question` practice writes a
+    `pending_prompt` row capturing the returned Telegram message_id (Decision B1).
+    The scheduler passes *prompt_repo* so journal capture can bind replies precisely.
+
     Wraps every send in try/except — a bad file_id must be logged and visible,
     never swallowed silently (per coding-patterns.md error handling rule).
     """
 
-    def __init__(self, bot: Bot) -> None:
+    def __init__(
+        self,
+        bot: Bot,
+        prompt_repo: PendingPromptRepository | None = None,
+    ) -> None:
         self._bot = bot
+        self._prompt_repo = prompt_repo
 
     async def send(self, practice: Practice, user_id: int) -> None:
         """Deliver *practice* to *user_id* via the appropriate Telegram send method.
+
+        For `question` practices, writes a `pending_prompt` row with the outgoing
+        message_id when *prompt_repo* is available.
 
         Raises DeliveryError on failure after logging the error.
         """
@@ -42,7 +59,19 @@ class DeliveryService:
 
     async def _dispatch(self, practice: Practice, user_id: int) -> None:
         """Route to the correct Telegram send method based on content_type."""
-        if practice.content_type in ("question", "text"):
+        if practice.content_type == "question":
+            text = practice.content or ""
+            sent = await self._bot.send_message(chat_id=user_id, text=text)
+            # Write a pending_prompt so the user's reply can be bound to this practice
+            if self._prompt_repo is not None:
+                await self._prompt_repo.create(
+                    user_id=user_id,
+                    kind=_DEFAULT_PROMPT_KIND,
+                    practice_id=practice.id,
+                    telegram_message_id=sent.message_id,
+                )
+
+        elif practice.content_type == "text":
             text = practice.content or ""
             await self._bot.send_message(chat_id=user_id, text=text)
 
