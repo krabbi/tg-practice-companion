@@ -1,0 +1,113 @@
+name: Claude PR product review
+
+# Triggered when a PR is labeled 'code-approved'.
+# If docs/user_guide.md is not in the PR diff, product-approved is set
+# directly (no agent needed). Otherwise a product-manager agent reviews and
+# sets product-approved or product-changes-requested via the PAT.
+on:
+  pull_request:
+    types: [labeled]
+
+concurrency:
+  group: claude-worker
+  cancel-in-progress: false
+
+jobs:
+  product-review:
+    if: github.event.label.name == 'code-approved'
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+      id-token: write
+      actions: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # F5: remove both product outcome labels before proceeding.
+      - name: Clear product outcome labels
+        env:
+          GH_TOKEN: ${{ secrets.AUTOMATION_TOKEN }}
+        run: |
+          PR_NUMBER="${{ github.event.pull_request.number }}"
+          gh pr edit "${PR_NUMBER}" --remove-label "product-approved" || true
+          gh pr edit "${PR_NUMBER}" --remove-label "product-changes-requested" || true
+
+      # Check whether docs/user_guide.md appears in this PR's diff.
+      - name: Check if user_guide.md changed
+        id: guidcheck
+        env:
+          GH_TOKEN: ${{ secrets.AUTOMATION_TOKEN }}
+        run: |
+          PR_NUMBER="${{ github.event.pull_request.number }}"
+          CHANGED=$(gh pr diff "${PR_NUMBER}" --name-only 2>/dev/null | grep -c 'docs/user_guide.md' || true)
+          echo "user_guide_changed=${CHANGED}" >> "$GITHUB_OUTPUT"
+          echo "user_guide.md changed: ${CHANGED}"
+
+      # Fast path: no user_guide.md change → product-approved immediately.
+      - name: Auto approve (no user guide change)
+        if: steps.guidcheck.outputs.user_guide_changed == '0'
+        env:
+          GH_TOKEN: ${{ secrets.AUTOMATION_TOKEN }}
+        run: |
+          PR_NUMBER="${{ github.event.pull_request.number }}"
+          gh pr comment "${PR_NUMBER}" --body "docs/user_guide.md not changed — product review skipped, setting product-approved automatically."
+          gh pr edit "${PR_NUMBER}" --add-label "product-approved"
+
+      # Slow path: user_guide.md changed → invoke product-manager agent.
+      - uses: anthropics/claude-code-action@v1
+        id: claude
+        if: steps.guidcheck.outputs.user_guide_changed != '0'
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          prompt: |
+            You are the product-manager agent for the tg-practice-companion project.
+            PR #${{ github.event.pull_request.number }} has passed code review and
+            changes docs/user_guide.md. Perform a product acceptance review.
+
+            Steps:
+            1. Fetch the diff: gh pr diff ${{ github.event.pull_request.number }}
+            2. Read docs/user_guide.md to understand the full user-facing doc.
+            3. Read README.md (frozen product baseline / AC-1..AC-22).
+            4. Review whether:
+               - The user_guide.md changes accurately describe the new behaviour
+               - Nothing contradicts the AC requirements in README.md
+               - The Russian language is correct and the tone is appropriate
+               - No user-facing strings are missing from the i18n layer
+            5. Post a detailed product review comment on the PR.
+            6. Post a SECOND comment containing EXACTLY one of these two lines:
+               <!-- autobot:product-review-verdict:APPROVED -->
+               <!-- autobot:product-review-verdict:CHANGES_REQUESTED -->
+
+            Use APPROVED only if the user guide accurately reflects the feature.
+            Use CHANGES_REQUESTED if ANY product-level issue is found.
+          claude_args: |
+            --max-turns 50
+            --allowedTools "Bash,Edit,Write,Read,Glob,Grep,MultiEdit"
+
+      # Post-agent verification: find verdict and set label.
+      - name: Parse product verdict and set label
+        if: steps.guidcheck.outputs.user_guide_changed != '0'
+        env:
+          GH_TOKEN: ${{ secrets.AUTOMATION_TOKEN }}
+        run: |
+          PR_NUMBER="${{ github.event.pull_request.number }}"
+          sleep 5
+
+          COMMENTS=$(gh pr view "${PR_NUMBER}" --json comments --jq '.comments[].body' 2>/dev/null || true)
+
+          if echo "$COMMENTS" | grep -q '<!-- autobot:product-review-verdict:APPROVED -->'; then
+            echo "Product verdict: APPROVED"
+            gh pr edit "${PR_NUMBER}" --add-label "product-approved"
+          elif echo "$COMMENTS" | grep -q '<!-- autobot:product-review-verdict:CHANGES_REQUESTED -->'; then
+            echo "Product verdict: CHANGES_REQUESTED"
+            gh pr edit "${PR_NUMBER}" --add-label "product-changes-requested"
+          else
+            gh pr comment "${PR_NUMBER}" --body "[AUTOBOT ERROR] The product-manager agent ran but posted no verdict comment. Manual intervention required."
+            gh pr edit "${PR_NUMBER}" --add-label "needs-human"
+            exit 1
+          fi

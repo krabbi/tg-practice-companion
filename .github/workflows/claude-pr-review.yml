@@ -1,0 +1,102 @@
+name: Claude PR code review
+
+# Triggered when a PR is labeled 'needs-code-review'.
+# A reviewer agent reads the diff, posts a structured review comment,
+# then appends a hidden-marker verdict comment.
+# Post-agent bash reads the verdict and sets code-approved or
+# code-changes-requested using the PAT so the next workflow fires.
+on:
+  pull_request:
+    types: [labeled]
+
+concurrency:
+  group: claude-worker
+  cancel-in-progress: false
+
+jobs:
+  review:
+    if: github.event.label.name == 'needs-code-review'
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+      id-token: write
+      actions: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # F5: remove both outcome labels before running the agent so a stale
+      # label from a previous round cannot pass the post-agent check.
+      - name: Clear outcome labels
+        env:
+          GH_TOKEN: ${{ secrets.AUTOMATION_TOKEN }}
+        run: |
+          PR_NUMBER="${{ github.event.pull_request.number }}"
+          gh pr edit "${PR_NUMBER}" --remove-label "code-approved" || true
+          gh pr edit "${PR_NUMBER}" --remove-label "code-changes-requested" || true
+
+      - uses: anthropics/claude-code-action@v1
+        id: claude
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          prompt: |
+            You are the pr-reviewer agent for the tg-practice-companion project.
+            Review PR #${{ github.event.pull_request.number }} on branch
+            ${{ github.event.pull_request.head.ref }}.
+
+            Fetch the full diff with: gh pr diff ${{ github.event.pull_request.number }}
+            Then inspect relevant source files as needed.
+
+            Review checklist:
+            - Architecture: Handler → Service → Repository layers respected (no skipping)
+            - Tests: new code has unit tests, coverage maintained
+            - Security: no secrets hardcoded, html.escape on LLM/user content
+            - Cost logging: every LLM/API call records tokens+cost via usage service (AC-16)
+            - CBT tone pinned in all LLM prompts, no criticism/unsolicited advice (AC-13)
+            - i18n: all user-facing strings via t(key, lang), no hardcoded UI text (AC-14)
+            - DB migrations correct; schema in docs/architecture.md updated
+            - ruff lint and format pass
+            - IMPORTANT: the agent runs pytest locally against sqlite, but CI's 'test' job
+              uses real Postgres — watch for FK-order / teardown issues sqlite misses.
+
+            Post a detailed review comment on the PR with your findings.
+
+            Then post a SECOND comment containing EXACTLY one of these two lines
+            (and nothing else on that line) so the automation can parse it:
+              <!-- autobot:code-review-verdict:APPROVED -->
+              <!-- autobot:code-review-verdict:CHANGES_REQUESTED -->
+
+            Use APPROVED only if there are no blocking issues.
+            Use CHANGES_REQUESTED if ANY blocking issue is found.
+          claude_args: |
+            --max-turns 50
+            --allowedTools "Bash,Edit,Write,Read,Glob,Grep,MultiEdit"
+
+      # Post-agent verification: find the verdict comment and set the label.
+      - name: Parse verdict and set label
+        env:
+          GH_TOKEN: ${{ secrets.AUTOMATION_TOKEN }}
+        run: |
+          PR_NUMBER="${{ github.event.pull_request.number }}"
+
+          # Give the comment a moment to appear (API propagation)
+          sleep 5
+
+          COMMENTS=$(gh pr view "${PR_NUMBER}" --json comments --jq '.comments[].body' 2>/dev/null || true)
+
+          if echo "$COMMENTS" | grep -q '<!-- autobot:code-review-verdict:APPROVED -->'; then
+            echo "Verdict: APPROVED"
+            gh pr edit "${PR_NUMBER}" --add-label "code-approved"
+          elif echo "$COMMENTS" | grep -q '<!-- autobot:code-review-verdict:CHANGES_REQUESTED -->'; then
+            echo "Verdict: CHANGES_REQUESTED"
+            gh pr edit "${PR_NUMBER}" --add-label "code-changes-requested"
+          else
+            # No verdict comment found — agent failed silently
+            gh pr comment "${PR_NUMBER}" --body "[AUTOBOT ERROR] The reviewer agent ran but posted no verdict comment. Manual intervention required."
+            gh pr edit "${PR_NUMBER}" --add-label "needs-human"
+            exit 1
+          fi

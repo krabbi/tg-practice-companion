@@ -1,0 +1,109 @@
+name: Claude PR product fix
+
+# Triggered when a PR is labeled 'product-changes-requested'.
+# F2 (second independent counter): counts <!-- autobot:product-fix-round -->
+# marker comments, cap 5 → needs-human + stop.
+# Otherwise the coder agent fixes docs/user_guide.md, pushes, and re-labels
+# needs-code-review (not needs-product-review) so the full pipeline re-runs.
+on:
+  pull_request:
+    types: [labeled]
+
+concurrency:
+  group: claude-worker
+  cancel-in-progress: false
+
+jobs:
+  product-fix:
+    if: github.event.label.name == 'product-changes-requested'
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+      id-token: write
+      actions: read
+    steps:
+      # F4: checkout the PR branch so the agent can push.
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          fetch-depth: 0
+
+      # F2: count existing product-fix-round marker comments; cap at 5.
+      - name: Check product fix round cap
+        id: roundcheck
+        env:
+          GH_TOKEN: ${{ secrets.AUTOMATION_TOKEN }}
+        run: |
+          PR_NUMBER="${{ github.event.pull_request.number }}"
+          ROUNDS=$(gh pr view "${PR_NUMBER}" --json comments \
+            --jq '[.comments[].body | select(contains("<!-- autobot:product-fix-round -->"))] | length' \
+            2>/dev/null || echo "0")
+          echo "Product fix rounds so far: ${ROUNDS}"
+          echo "rounds=${ROUNDS}" >> "$GITHUB_OUTPUT"
+          if [ "${ROUNDS}" -ge 5 ]; then
+            BODY="[AUTOBOT] Maximum product fix rounds (5) reached without product approval. Setting needs-human label for manual intervention. <!-- autobot:product-fix-round -->"
+            gh pr comment "${PR_NUMBER}" --body "${BODY}"
+            gh pr edit "${PR_NUMBER}" --add-label "needs-human"
+            echo "capped=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "capped=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: anthropics/claude-code-action@v1
+        id: claude
+        if: steps.roundcheck.outputs.capped == 'false'
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          prompt: |
+            You are the coder agent for the tg-practice-companion project.
+            PR #${{ github.event.pull_request.number }} (branch:
+            ${{ github.event.pull_request.head.ref }}) has received product
+            review feedback requesting documentation changes.
+
+            Steps:
+            1. Read the latest product review comment on PR #${{ github.event.pull_request.number }}
+               with: gh pr view ${{ github.event.pull_request.number }} --json comments
+            2. Fix every issue raised by the product reviewer in docs/user_guide.md
+               (and docs/architecture.md if needed). Do NOT change bot/ code unless
+               the product reviewer explicitly asked for it.
+            3. Commit and push your documentation fixes to branch
+               ${{ github.event.pull_request.head.ref }}.
+            4. Post a comment on PR #${{ github.event.pull_request.number }}
+               summarising what you changed in the docs, ending with EXACTLY this line:
+               <!-- autobot:product-fix-round -->
+
+            Language note: docs/user_guide.md is in Russian; keep it Russian.
+          claude_args: |
+            --max-turns 50
+            --allowedTools "Bash,Edit,Write,Read,Glob,Grep,MultiEdit"
+
+      # Post-agent verification: the fix-round marker comment must be present.
+      - name: Verify product fix was pushed
+        if: steps.roundcheck.outputs.capped == 'false'
+        env:
+          GH_TOKEN: ${{ secrets.AUTOMATION_TOKEN }}
+        run: |
+          PR_NUMBER="${{ github.event.pull_request.number }}"
+
+          MARKER=$(gh pr view "${PR_NUMBER}" --json comments \
+            --jq '[.comments[].body | select(contains("<!-- autobot:product-fix-round -->"))] | length' \
+            2>/dev/null || echo "0")
+          if [ "${MARKER}" -lt 1 ]; then
+            gh pr comment "${PR_NUMBER}" --body "[AUTOBOT ERROR] The coder agent ran but posted no product-fix-round marker comment. Manual intervention required."
+            gh pr edit "${PR_NUMBER}" --add-label "needs-human"
+            exit 1
+          fi
+          echo "Product fix round marker found (total: ${MARKER})"
+
+      # Route back to code review (full pipeline re-runs from the start).
+      - name: Route back to code review
+        if: steps.roundcheck.outputs.capped == 'false'
+        env:
+          GH_TOKEN: ${{ secrets.AUTOMATION_TOKEN }}
+        run: |
+          PR_NUMBER="${{ github.event.pull_request.number }}"
+          gh pr edit "${PR_NUMBER}" --remove-label "product-changes-requested" || true
+          gh pr edit "${PR_NUMBER}" --add-label "needs-code-review"

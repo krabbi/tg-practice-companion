@@ -32,7 +32,45 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+
+      # Pre-agent: find the target issue number so we can verify afterward.
+      - name: Find target issue
+        id: find-issue
+        env:
+          GH_TOKEN: ${{ secrets.AUTOMATION_TOKEN }}
+        run: |
+          # Find oldest open claude-ready issue without claude-in-progress and without an open PR
+          ISSUE_NUMBER=$(gh issue list \
+            --label "claude-ready" \
+            --state open \
+            --json number,labels,createdAt \
+            --jq '.[] | select(.labels | map(.name) | contains(["claude-in-progress"]) | not) | .number' \
+            2>/dev/null | tail -1 || true)
+
+          # Also check for stuck tasks: claude-in-progress for >24h with no PR
+          if [ -z "$ISSUE_NUMBER" ]; then
+            STUCK=$(gh issue list \
+              --label "claude-in-progress" \
+              --state open \
+              --json number,updatedAt \
+              --jq '.[] | select((.updatedAt | fromdateiso8601) < (now - 86400)) | .number' \
+              2>/dev/null | tail -1 || true)
+            if [ -n "$STUCK" ]; then
+              # Verify no open PR exists
+              PR_EXISTS=$(gh pr list --state open --search "Closes #${STUCK}" --json number --jq 'length' 2>/dev/null || echo "0")
+              if [ "$PR_EXISTS" = "0" ]; then
+                gh issue edit "${STUCK}" --remove-label "claude-in-progress" || true
+                ISSUE_NUMBER="$STUCK"
+              fi
+            fi
+          fi
+
+          echo "issue_number=${ISSUE_NUMBER}" >> "$GITHUB_OUTPUT"
+          echo "Target issue: ${ISSUE_NUMBER}"
+
       - uses: anthropics/claude-code-action@v1
+        id: claude
+        if: steps.find-issue.outputs.issue_number != ''
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           prompt: |
@@ -55,3 +93,34 @@ jobs:
           claude_args: |
             --max-turns 50
             --allowedTools "Bash,Edit,Write,Read,Glob,Grep,MultiEdit"
+
+      # Post-agent verification: find the PR opened for this issue.
+      - name: Verify PR was created
+        if: steps.find-issue.outputs.issue_number != ''
+        env:
+          GH_TOKEN: ${{ secrets.AUTOMATION_TOKEN }}
+        run: |
+          ISSUE_NUMBER="${{ steps.find-issue.outputs.issue_number }}"
+          PR_URL=$(gh pr list --state open --search "Closes #${ISSUE_NUMBER}" --json url --jq '.[0].url' 2>/dev/null || true)
+          if [ -z "$PR_URL" ]; then
+            PR_URL=$(gh pr list --state open --json url,body --jq ".[] | select(.body | test(\"#${ISSUE_NUMBER}\")) | .url" 2>/dev/null | head -1 || true)
+          fi
+          if [ -z "$PR_URL" ]; then
+            gh issue comment "${ISSUE_NUMBER}" --body "[AUTOBOT ERROR] The sweeper agent ran but no PR was found for issue #${ISSUE_NUMBER}. Manual intervention required."
+            gh issue edit "${ISSUE_NUMBER}" --add-label "needs-human"
+            exit 1
+          fi
+          echo "PR found: ${PR_URL}"
+          echo "PR_URL=${PR_URL}" >> "$GITHUB_ENV"
+          echo "PR_NUMBER=$(echo "${PR_URL}" | grep -oE '[0-9]+$')" >> "$GITHUB_ENV"
+
+      # Tail: set needs-code-review on the PR and remove claude-ready from the
+      # issue using the PAT so the label change re-triggers the review workflow.
+      - name: Route to code review
+        if: steps.find-issue.outputs.issue_number != ''
+        env:
+          GH_TOKEN: ${{ secrets.AUTOMATION_TOKEN }}
+        run: |
+          ISSUE_NUMBER="${{ steps.find-issue.outputs.issue_number }}"
+          gh pr edit "${PR_NUMBER}" --add-label "needs-code-review"
+          gh issue edit "${ISSUE_NUMBER}" --remove-label "claude-ready" || true
