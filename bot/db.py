@@ -1,9 +1,14 @@
 """Database engine and session factory setup."""
 
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import (
+    AsyncEngine,
+    AsyncSession,
+    async_sessionmaker,
+    create_async_engine,
+)
 
 
-def build_engine(database_url: str):  # type: ignore[no-untyped-def]
+def build_engine(database_url: str) -> AsyncEngine:
     """Create an async SQLAlchemy engine from a database URL."""
     return create_async_engine(database_url, echo=False)
 
