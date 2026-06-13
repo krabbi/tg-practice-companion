@@ -116,13 +116,16 @@ async def run_tick(
     config: Config,
     utc_dt: datetime,
     bot: MagicMock | None = None,
+    scheduler: MagicMock | None = None,
 ) -> MagicMock:
     """Run one tick at utc_dt and return the bot mock."""
     if bot is None:
         bot = make_mock_bot()
+    if scheduler is None:
+        scheduler = MagicMock()
     with patch("bot.scheduler.datetime") as mock_dt:
         mock_dt.now.return_value = utc_dt
-        await tick(bot, session_factory, config)
+        await tick(bot, session_factory, config, scheduler)
     return bot
 
 
@@ -230,3 +233,39 @@ async def test_start_scheduler_registers_tick_with_correct_options(config) -> No
         assert tick_job.coalesce is True
     finally:
         scheduler.shutdown(wait=False)
+
+
+@pytest.mark.asyncio
+async def test_morning_analysis_dispatched_as_separate_job(seeded_session, config) -> None:
+    """At _MORNING_ANALYSIS_HOUR:00 local time, tick dispatches morning_analysis as a
+    one-shot APScheduler job — never awaited inline.
+    """
+    factory = seeded_session
+    # 07:00 UTC (user is in UTC, so local == UTC)
+    utc_dt = datetime(2026, 6, 10, 7, 0, tzinfo=UTC)
+
+    mock_scheduler = MagicMock()
+    await run_tick(factory, config, utc_dt, scheduler=mock_scheduler)
+
+    # add_job must have been called with id="morning_analysis"
+    mock_scheduler.add_job.assert_called_once()
+    call_kwargs = mock_scheduler.add_job.call_args
+    # id is passed as a keyword argument
+    assert call_kwargs.kwargs.get("id") == "morning_analysis" or (
+        len(call_kwargs.args) > 3 and call_kwargs.args[3] == "morning_analysis"
+    )
+
+
+@pytest.mark.asyncio
+async def test_morning_analysis_not_dispatched_outside_analysis_hour(
+    seeded_session, config
+) -> None:
+    """At any hour other than _MORNING_ANALYSIS_HOUR, no morning_analysis job is dispatched."""
+    factory = seeded_session
+    # 10:00 UTC — inside send window but not the analysis hour
+    utc_dt = datetime(2026, 6, 10, 10, 0, tzinfo=UTC)
+
+    mock_scheduler = MagicMock()
+    await run_tick(factory, config, utc_dt, scheduler=mock_scheduler)
+
+    mock_scheduler.add_job.assert_not_called()

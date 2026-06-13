@@ -1,4 +1,4 @@
-"""APScheduler setup: 60s tick job and housekeeping."""
+"""APScheduler setup: 60s tick job, housekeeping, and morning-analysis dispatch."""
 
 import logging
 from datetime import UTC, datetime, timedelta
@@ -19,6 +19,9 @@ logger = logging.getLogger(__name__)
 # Housekeeping: prune practice_sends older than this many days
 _PRUNE_DAYS = 14
 
+# Local hour at which the morning analysis is dispatched (once per day)
+_MORNING_ANALYSIS_HOUR = 7
+
 
 def _slot_key(local_now: datetime) -> str:
     """Return the canonical slot key for the given local wall-clock minute.
@@ -28,11 +31,32 @@ def _slot_key(local_now: datetime) -> str:
     return local_now.strftime("%Y-%m-%dT%H:%M")
 
 
-async def tick(bot, session_factory: async_sessionmaker, config: Config) -> None:  # type: ignore[type-arg]
+async def run_morning_analysis(bot, session_factory: async_sessionmaker, config: Config) -> None:  # type: ignore[type-arg]
+    """Run the morning AI analysis of yesterday's journal entries (AC-11).
+
+    This is a no-op stub until the AI analysis service is implemented.
+    It is intentionally dispatched as a separate one-shot APScheduler job
+    (never awaited inline in tick) so that slow LLM calls cannot block the
+    60-second practice-delivery tick.
+    """
+    logger.info("run_morning_analysis: stub — AI analysis service not yet implemented")
+
+
+async def tick(  # type: ignore[type-arg]
+    bot,
+    session_factory: async_sessionmaker,
+    config: Config,
+    scheduler: AsyncIOScheduler,
+) -> None:
     """Evaluate due practices for the current UTC minute and send them.
 
     This job runs every 60 seconds with max_instances=1 and coalesce=True,
     so it can never overlap itself and a missed minute collapses into one run.
+
+    When the local clock first reaches _MORNING_ANALYSIS_HOUR, a one-shot
+    run_morning_analysis job is dispatched to the scheduler (max_instances=1
+    so concurrent dispatches are harmless).  Slow LLM work must never be
+    awaited inline here.
     """
     now_utc = datetime.now(UTC)
 
@@ -60,6 +84,20 @@ async def tick(bot, session_factory: async_sessionmaker, config: Config) -> None
 
         local_now = now_utc.astimezone(user_tz)
 
+        # Morning-analysis dispatch: fire once when the clock hits the analysis hour.
+        # Dispatched as a separate one-shot job so the tick never blocks on LLM work.
+        if local_now.hour == _MORNING_ANALYSIS_HOUR and local_now.minute == 0:
+            scheduler.add_job(
+                run_morning_analysis,
+                "date",
+                run_date=now_utc,
+                args=[bot, session_factory, config],
+                id="morning_analysis",
+                replace_existing=True,
+                max_instances=1,
+            )
+            logger.info("tick: dispatched morning_analysis one-shot job")
+
         # Send-window check: half-open [send_window_start, send_window_end)
         if not (config.send_window_start <= local_now.hour < config.send_window_end):
             logger.debug(
@@ -85,10 +123,8 @@ async def tick(bot, session_factory: async_sessionmaker, config: Config) -> None
         slot = _slot_key(local_now)
 
         for practice in due_practices:
-            # Capture scalar values before any rollback can expire the ORM object.
-            # try_claim() calls session.rollback() on IntegrityError (duplicate slot),
-            # which expires all session-tracked objects; reading .id after that would
-            # trigger a synchronous lazy-load and raise MissingGreenlet.
+            # Capture scalar values up front — after session.commit() the ORM object
+            # is expired; reading attributes after that would trigger a lazy-load.
             practice_id = practice.id
             practice_name = practice.name
 
@@ -162,6 +198,9 @@ def start_scheduler(bot, session_factory: async_sessionmaker, config: Config) ->
     The tick job uses max_instances=1 and coalesce=True:
     - max_instances=1: a slow tick can never overlap itself
     - coalesce=True: missed minutes collapse into one re-evaluation (no catch-up)
+
+    The scheduler reference is passed into tick so it can dispatch one-shot jobs
+    (e.g. morning_analysis) without blocking the delivery loop.
     """
     scheduler = AsyncIOScheduler()
 
@@ -169,7 +208,7 @@ def start_scheduler(bot, session_factory: async_sessionmaker, config: Config) ->
         tick,
         "interval",
         seconds=60,
-        args=[bot, session_factory, config],
+        args=[bot, session_factory, config, scheduler],
         id="practice_tick",
         max_instances=1,
         coalesce=True,

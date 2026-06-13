@@ -30,7 +30,7 @@ class TimezoneService:
         # Validate the timezone string before touching the DB
         try:
             ZoneInfo(tz_string)
-        except (ZoneInfoNotFoundError, KeyError) as exc:
+        except (ZoneInfoNotFoundError, KeyError, ValueError) as exc:
             raise TimezoneError(f"Invalid IANA timezone: {tz_string!r}") from exc
 
         user = await self._user_repo.get_by_telegram_id(telegram_id)

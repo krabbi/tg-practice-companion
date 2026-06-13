@@ -98,7 +98,8 @@ async def run_tick_at(utc_dt: datetime, practice: Practice, config: Config) -> M
         patch("bot.scheduler.DeliveryService", return_value=mock_delivery_service),
     ):
         mock_datetime.now.return_value = utc_dt
-        await tick(mock_bot, mock_factory, config)
+        mock_scheduler = MagicMock()
+        await tick(mock_bot, mock_factory, config, mock_scheduler)
 
     return mock_delivery_service
 

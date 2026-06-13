@@ -23,6 +23,8 @@ _RU: dict[str, str] = {
     "skip_day_button": "Пропустить сегодня",
     # delivery errors
     "delivery_error": "Не удалось отправить практику. Пожалуйста, сообщи об этом.",
+    # skip_day errors
+    "skip_day_error": "Не удалось пропустить день. Попробуй ещё раз.",
 }
 
 # English strings — complete canonical set; used when lang == "en" or as fallback.
@@ -44,6 +46,8 @@ _EN: dict[str, str] = {
     "skip_day_button": "Skip today",
     # delivery errors
     "delivery_error": "Could not send the practice. Please let us know.",
+    # skip_day errors
+    "skip_day_error": "Could not skip the day. Please try again.",
 }
 
 _STRINGS: dict[str, dict[str, str]] = {"ru": _RU, "en": _EN}
