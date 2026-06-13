@@ -59,7 +59,9 @@ jobs:
           fi
       - name: Tests with coverage
         if: steps.botcheck.outputs.has_modules == 'true'
-        run: pytest --cov=bot --cov-report=term-missing --cov-fail-under=80
+        run: |
+          pytest --cov=bot --cov-report=term-missing --cov-report=json --cov-fail-under=80
+          python scripts/check_coverage.py
       - name: Collect-only sanity (bootstrap)
         if: steps.botcheck.outputs.has_modules == 'false'
         # pytest exits 5 when zero tests are collected — expected on the
