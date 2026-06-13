@@ -8,6 +8,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from bot.config import Config
+from bot.repositories.pending_prompt_repository import PendingPromptRepository
 from bot.repositories.practice_repository import PracticeRepository
 from bot.repositories.practice_send_repository import PracticeSendRepository
 from bot.repositories.user_repository import UserRepository
@@ -64,8 +65,9 @@ async def tick(  # type: ignore[type-arg]
         user_repo = UserRepository(session)
         practice_repo = PracticeRepository(session)
         send_repo = PracticeSendRepository(session)
+        prompt_repo = PendingPromptRepository(session)
         practice_service = PracticeService(practice_repo)
-        delivery_service = DeliveryService(bot)
+        delivery_service = DeliveryService(bot, prompt_repo=prompt_repo)
 
         user = await user_repo.get_first()
         if user is None:
@@ -164,6 +166,9 @@ async def tick(  # type: ignore[type-arg]
 
             try:
                 await delivery_service.send(practice, user.telegram_id)
+                # Commit to persist the pending_prompt written by DeliveryService
+                # for question practices (flushed but not yet committed).
+                await session.commit()
                 logger.info(
                     "tick: delivered practice %s (%r) to user %s at slot %s",
                     practice_id,

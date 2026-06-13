@@ -25,6 +25,14 @@ _RU: dict[str, str] = {
     "delivery_error": "Не удалось отправить практику. Пожалуйста, сообщи об этом.",
     # skip_day errors
     "skip_day_error": "Не удалось пропустить день. Попробуй ещё раз.",
+    # assessment buttons (AC-8)
+    "assess_yes": "Да ✅",
+    "assess_no": "Нет ❌",
+    # clarify question — deterministic, no LLM (AC-8)
+    "assess_clarify": "Ведёт ли тебя это к твоим целям?",
+    # assessment errors
+    "assessment_failed": "Не удалось сохранить оценку. Попробуй ещё раз.",
+    "assessment_already_set": "Оценка уже записана.",
 }
 
 # English strings — complete canonical set; used when lang == "en" or as fallback.
@@ -48,6 +56,14 @@ _EN: dict[str, str] = {
     "delivery_error": "Could not send the practice. Please let us know.",
     # skip_day errors
     "skip_day_error": "Could not skip the day. Please try again.",
+    # assessment buttons (AC-8)
+    "assess_yes": "Yes ✅",
+    "assess_no": "No ❌",
+    # clarify question — deterministic, no LLM (AC-8)
+    "assess_clarify": "Does this thought lead you towards your goals?",
+    # assessment errors
+    "assessment_failed": "Could not save your assessment. Please try again.",
+    "assessment_already_set": "Assessment already recorded.",
 }
 
 _STRINGS: dict[str, dict[str, str]] = {"ru": _RU, "en": _EN}
