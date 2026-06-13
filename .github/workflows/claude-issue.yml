@@ -17,6 +17,15 @@ jobs:
     if: contains(github.event.issue.labels.*.name, 'claude-ready')
     runs-on: ubuntu-latest
     timeout-minutes: 120
+    # claude-code-action needs id-token:write for OIDC auth; the agent also
+    # creates branches/commits/PRs and edits issue labels, so contents/PRs/
+    # issues are write, and actions:read lets it inspect CI results.
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+      id-token: write
+      actions: read
     steps:
       - uses: anthropics/claude-code-action@v1
         with:
