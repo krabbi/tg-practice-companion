@@ -150,7 +150,10 @@ async def test_guardrail_logs_warning(fake_config, caplog) -> None:
     with caplog.at_level(logging.WARNING, logger="bot.services.analysis_service"):
         await svc.build(user_id=USER_ID, analysis_date=TARGET_DATE, lang="ru")
 
-    assert any("guardrail" in record.message.lower() for record in caplog.records)
+    # Use record.getMessage() (computed on demand) rather than record.message:
+    # the latter is only populated once a Formatter has formatted the record, and
+    # pytest 9.1+ no longer does so for captured records, so it reads empty on CI.
+    assert any("guardrail" in record.getMessage().lower() for record in caplog.records)
 
 
 @pytest.mark.asyncio
