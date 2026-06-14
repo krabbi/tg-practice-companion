@@ -107,7 +107,7 @@ jobs:
           # disallowedTools hard-blocks the merge/close subcommands so the
           # sweeper agent cannot bypass the staged gates (see claude-issue.yml).
           claude_args: |
-            --max-turns 50
+            --max-turns 250
             --allowedTools "Bash,Edit,Write,Read,Glob,Grep,MultiEdit"
             --disallowedTools "Bash(gh pr merge:*),Bash(gh pr close:*),Bash(gh issue close:*),Bash(gh pr review:*)"
 
@@ -133,7 +133,11 @@ jobs:
             else
               gh issue comment "${ISSUE_NUMBER}" --body "[AUTOBOT ERROR] The sweeper agent ran but no PR was found for issue #${ISSUE_NUMBER}. Manual intervention required."
             fi
-            gh issue edit "${ISSUE_NUMBER}" --add-label "needs-human"
+            # Release the queue lock and the ready opt-in: needs-human now owns
+            # this issue, so neither the instant workflow nor the sweeper should
+            # re-pick it.
+            gh issue edit "${ISSUE_NUMBER}" --add-label "needs-human" \
+              --remove-label "claude-in-progress" --remove-label "claude-ready" || true
             exit 1
           fi
           echo "PR found: ${PR_URL}"
