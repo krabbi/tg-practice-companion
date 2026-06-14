@@ -81,6 +81,11 @@ async def run_tick_at(utc_dt: datetime, practice: Practice, config: Config) -> M
     mock_delivery_service = MagicMock()
     mock_delivery_service.send = AsyncMock()
 
+    # At 06:00 the tick instantiates BlessingRepository + BlessingService; mock them
+    # so unit tests do not need a real DB session.
+    mock_blessing_svc = MagicMock()
+    mock_blessing_svc.for_date = AsyncMock(return_value=None)
+
     mock_session = MagicMock()
     mock_session.commit = AsyncMock()
     mock_session.__aenter__ = AsyncMock(return_value=mock_session)
@@ -96,6 +101,8 @@ async def run_tick_at(utc_dt: datetime, practice: Practice, config: Config) -> M
         patch("bot.scheduler.PracticeSendRepository", return_value=mock_send_repo),
         patch("bot.scheduler.PracticeService", return_value=mock_practice_service),
         patch("bot.scheduler.DeliveryService", return_value=mock_delivery_service),
+        patch("bot.scheduler.BlessingService", return_value=mock_blessing_svc),
+        patch("bot.scheduler.BlessingRepository"),
     ):
         mock_datetime.now.return_value = utc_dt
         mock_scheduler = MagicMock()

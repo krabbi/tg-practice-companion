@@ -27,3 +27,6 @@ class User(Base, TimestampMixin):
 
     # UTC instant of the last timezone change; consumed by the backward-jump guard (M1/M5)
     tz_changed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    # Date the morning blessing was last sent; used for daily dedup (M3.4)
+    last_blessing_date: Mapped[date | None] = mapped_column(Date, nullable=True)

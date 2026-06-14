@@ -233,3 +233,65 @@ Use `python -m cli.seed practices content/practices.yaml` to load or update prac
 The seed is idempotent (upserts by `name`). See `content/practices.example.yaml` for the
 full YAML schema and the reference daily cycle.
 
+---
+
+## 06:00 morning block — structure and 06:00 collision (M3.4)
+
+### Morning block delivery order
+
+At 06:00 local time the scheduler fires in this sequence:
+
+| Step | What | Mechanism |
+|---|---|---|
+| 1 | Morning blessing (rotating) | Inline in tick, from `morning_blessings` table |
+| 2 | AI analysis dispatch | Off-tick job `run_morning_analysis` added to scheduler |
+| 3 | Morning practice (sort_order ≤ 30) | Practice delivery loop (`compose()` order) |
+| 4 | Motivational image (sort_order ≤ 40) | Practice delivery loop |
+| 5 | Hourly thought question (sort_order ≥ 100) | Practice delivery loop — 06:00 collision, see below |
+
+The AI analysis text arrives whenever the LLM responds (could be seconds to minutes after
+dispatch).  From the user's perspective: blessing → analysis text → morning practice → image.
+
+### Blessing rotation
+
+Morning blessings are stored in the `morning_blessings` table (each row has a unique
+`rotation_order`).  The scheduler selects today's blessing using a date-derived index:
+
+```
+idx = today.toordinal() % count_of_active_blessings
+```
+
+Consecutive calendar days advance through the list in `rotation_order` sequence and
+wrap back to the first blessing after the last one.  The rotation requires no mutable
+cursor state — it is fully determined by the calendar date (AC-3).
+
+Deduplication: `users.last_blessing_date` tracks the last day a blessing was sent.
+A second tick at the same 06:00 slot (e.g., after a bot restart) does not resend.
+
+Seed blessings via `python -m cli.seed blessings content/blessings.yaml`.
+
+### 06:00 hourly-question collision
+
+The hourly thought-registration question configured with `interval_hours=1,
+anchor_hour=0` fires at every whole hour anchored to local midnight — including 06:00.
+This collision with the morning block is **intentional and expected**:
+
+- The question's `sort_order` (≥ 100 by convention) places it **after** the morning block
+  items (sort_order ≤ 40), so `compose()` delivers it last.
+- From the user's perspective it arrives as a natural follow-up to the morning motivation.
+
+**To shift the first hourly question to 07:00** (leaving the morning block undisturbed):
+set `anchor_hour=7` on the hourly question practice row.  This is a data-only change
+(no code modification required, AC-4):
+
+```yaml
+- name: Hourly thought-registration question
+  ...
+  interval_hours: 1
+  anchor_hour: 7   # ← changed from 0; first slot is now 07:00
+  anchor_minute: 0
+```
+
+After re-seeding with `python -m cli.seed practices content/practices.yaml` the new
+cadence takes effect on the next tick — no restart needed.
+

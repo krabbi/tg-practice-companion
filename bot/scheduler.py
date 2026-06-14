@@ -8,14 +8,17 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from bot.config import Config
+from bot.models.practice import Practice
 from bot.repositories.analysis_repository import AnalysisRepository
 from bot.repositories.api_usage_repository import ApiUsageRepository
+from bot.repositories.blessing_repository import BlessingRepository
 from bot.repositories.journal_repository import JournalRepository
 from bot.repositories.pending_prompt_repository import PendingPromptRepository
 from bot.repositories.practice_repository import PracticeRepository
 from bot.repositories.practice_send_repository import PracticeSendRepository
 from bot.repositories.user_repository import UserRepository
 from bot.services.analysis_service import AnalysisService
+from bot.services.blessing_service import BlessingService
 from bot.services.delivery_service import DeliveryService
 from bot.services.llm_client import LlmClient
 from bot.services.practice_service import PracticeService
@@ -26,8 +29,8 @@ logger = logging.getLogger(__name__)
 # Housekeeping: prune practice_sends older than this many days
 _PRUNE_DAYS = 14
 
-# Local hour at which the morning analysis is dispatched (once per day)
-_MORNING_ANALYSIS_HOUR = 7
+# Local hour at which the morning block fires: blessing rotation + analysis dispatch (AC-3, AC-11)
+_MORNING_BLOCK_HOUR = 6
 
 
 def _slot_key(local_now: datetime) -> str:
@@ -36,6 +39,20 @@ def _slot_key(local_now: datetime) -> str:
     Format: "YYYY-MM-DDTHH:MM" — uniquely identifies a practice slot.
     """
     return local_now.strftime("%Y-%m-%dT%H:%M")
+
+
+def compose(practices: list[Practice]) -> list[Practice]:
+    """Sort due practices into the presentation order defined by sort_order ascending.
+
+    The operator controls the morning-block sequence entirely through data:
+    assign lower sort_order values to items that should be delivered first.
+    Reference ordering (set in content/practices.yaml):
+        blessing rotation (sent separately, before this loop)
+        → morning practice   (sort_order ≤ 30)
+        → motivational image (sort_order ≤ 40)
+        → hourly question    (sort_order ≥ 100, after the morning block)
+    """
+    return sorted(practices, key=lambda p: p.sort_order)
 
 
 async def run_morning_analysis(bot, session_factory: async_sessionmaker, config: Config) -> None:  # type: ignore[type-arg]
@@ -123,10 +140,10 @@ async def tick(  # type: ignore[type-arg]
     This job runs every 60 seconds with max_instances=1 and coalesce=True,
     so it can never overlap itself and a missed minute collapses into one run.
 
-    When the local clock first reaches _MORNING_ANALYSIS_HOUR, a one-shot
-    run_morning_analysis job is dispatched to the scheduler (max_instances=1
-    so concurrent dispatches are harmless).  Slow LLM work must never be
-    awaited inline here.
+    At _MORNING_BLOCK_HOUR:00 local time the tick:
+    1. Dispatches run_morning_analysis as a one-shot job (off-tick, never awaited).
+    2. Sends the rotating morning blessing (inline, deduped by last_blessing_date).
+    3. Delivers all other due practices in compose() order (sort_order ascending).
     """
     now_utc = datetime.now(UTC)
 
@@ -155,9 +172,10 @@ async def tick(  # type: ignore[type-arg]
 
         local_now = now_utc.astimezone(user_tz)
 
-        # Morning-analysis dispatch: fire once when the clock hits the analysis hour.
-        # Dispatched as a separate one-shot job so the tick never blocks on LLM work.
-        if local_now.hour == _MORNING_ANALYSIS_HOUR and local_now.minute == 0:
+        # Morning-block dispatch: fire once when the clock hits _MORNING_BLOCK_HOUR.
+        # The analysis job is dispatched before the send-window check so it runs
+        # regardless of any future send-window reconfiguration (AC-11).
+        if local_now.hour == _MORNING_BLOCK_HOUR and local_now.minute == 0:
             scheduler.add_job(
                 run_morning_analysis,
                 "date",
@@ -186,6 +204,34 @@ async def tick(  # type: ignore[type-arg]
             )
             return
 
+        # Morning blessing: sent once per calendar day at _MORNING_BLOCK_HOUR:00.
+        # Deduped via user.last_blessing_date so a bot restart at :00 never double-sends.
+        if (
+            local_now.hour == _MORNING_BLOCK_HOUR
+            and local_now.minute == 0
+            and user.last_blessing_date != local_now.date()
+        ):
+            blessing_repo = BlessingRepository(session)
+            blessing_svc = BlessingService(blessing_repo)
+            blessing = await blessing_svc.for_date(local_now.date())
+            if blessing is not None:
+                # Claim before sending (same pattern as PracticeSend)
+                user.last_blessing_date = local_now.date()
+                await session.commit()
+                try:
+                    await bot.send_message(chat_id=user.telegram_id, text=blessing.text)
+                    logger.info(
+                        "tick: sent morning blessing (rotation_order=%d) to user %s",
+                        blessing.rotation_order,
+                        user.telegram_id,
+                    )
+                except Exception:
+                    logger.error(
+                        "tick: failed to send morning blessing to user %s",
+                        user.telegram_id,
+                        exc_info=True,
+                    )
+
         due_practices = await practice_service.due_now(local_now)
         if not due_practices:
             logger.debug("tick: no practices due at %s", local_now.strftime("%H:%M"))
@@ -193,7 +239,7 @@ async def tick(  # type: ignore[type-arg]
 
         slot = _slot_key(local_now)
 
-        for practice in due_practices:
+        for practice in compose(due_practices):
             # Capture scalar values up front — after session.commit() the ORM object
             # is expired; reading attributes after that would trigger a lazy-load.
             practice_id = practice.id

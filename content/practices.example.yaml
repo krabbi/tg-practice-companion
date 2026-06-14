@@ -16,32 +16,79 @@
 # NOT to the send window boundary.
 #
 # Reference daily cycle from README:
-#   06:00 — morning blessing (text)
+#   06:00 — morning block (blessing rotation + AI analysis dispatch + morning practice + image)
 #   08:00 — thought-registration question
-#   10:00 — thought-registration question
 #   12:00 — thought-registration question (CBT check-in)
-#   14:00 — motivational image
 #   18:00 — thought-registration question
 #   20:00 — night hypnosis audio
-#   Every 4h from 06:00 — short blessing text
+#   Every hour from 06:00 — thought-registration question (anchored to midnight)
+#
+# =============================================================================
+# 06:00 MORNING BLOCK — delivery order controlled by sort_order
+# =============================================================================
+#
+# The morning block fires at 06:00 and delivers in this order:
+#
+#   1. Morning blessing (sort_order ≤ 10)
+#      Automatically rotated from the morning_blessings table — not a practice
+#      row.  Seeded separately via cli/seed.py blessings subcommand.
+#
+#   2. AI analysis dispatch (off-tick — no sort_order; fired by the scheduler)
+#      Dispatched before practices are delivered.  The analysis text arrives
+#      whenever the LLM responds (seconds to minutes later).
+#
+#   3. Morning practice (sort_order ≤ 30)
+#      A fixed motivational or CBT text sent after the blessing.
+#
+#   4. Motivational image (sort_order ≤ 40)
+#      A morning photo.  Operator uploads the image to the bot and seeds its
+#      telegram_file_id here.
+#
+#   5. Hourly thought question at 06:00 (sort_order ≥ 100)
+#      The every_n_hours question (interval_hours=1, anchor_hour=0) also fires
+#      at 06:00 because anchor_hour=0 places it at every whole hour starting
+#      from midnight.  Its high sort_order ensures it is delivered AFTER the
+#      morning block — this is intentional and documented behaviour (AC-4).
+#
+#      If you prefer the hourly question to start at 07:00, change anchor_hour
+#      to 7.  This is a data change — no code modification needed.
+#
+# =============================================================================
 
-- name: Morning blessing
+# --- 06:00 morning block ---
+
+- name: Morning practice
   content_type: text
-  content: "Доброе утро! Сегодня у тебя есть всё необходимое, чтобы справиться с любой ситуацией. Ты молодец!"
+  content: "Доброе утро! Помни: каждый новый день — это возможность стать лучше. Ты справишься!"
   periodicity_type: fixed_times
   schedule_times: ["06:00"]
   active: true
-  sort_order: 10
+  sort_order: 30
 
+- name: Morning motivational image
+  content_type: image
+  # telegram_file_id is populated by the operator after uploading the image to the bot
+  telegram_file_id: "AgACAgIAAxk..."
+  mime: "image/jpeg"
+  periodicity_type: fixed_times
+  schedule_times: ["06:00"]
+  active: true
+  sort_order: 40
+
+# Hourly thought-registration question — fires every hour (anchor_hour=0 = midnight phase).
+# At 06:00 it collides with the morning block; sort_order=100 places it AFTER the block.
+# To shift the first question to 07:00 set anchor_hour=7 (data-only change, AC-4).
 - name: Hourly thought-registration question
   content_type: question
   content: "Какая мысль сейчас крутится у тебя в голове? Помогает ли она тебе двигаться к твоим целям?"
   periodicity_type: every_n_hours
-  interval_hours: 4
-  anchor_hour: 8
+  interval_hours: 1
+  anchor_hour: 0
   anchor_minute: 0
   active: true
-  sort_order: 20
+  sort_order: 100
+
+# --- Later in the day ---
 
 - name: CBT midday check-in
   content_type: question
@@ -49,17 +96,7 @@
   periodicity_type: fixed_times
   schedule_times: ["12:00"]
   active: true
-  sort_order: 30
-
-- name: Motivational image
-  content_type: image
-  # telegram_file_id is populated by the operator after uploading the image to the bot
-  telegram_file_id: "AgACAgIAAxk..."
-  mime: "image/jpeg"
-  periodicity_type: fixed_times
-  schedule_times: ["14:00"]
-  active: true
-  sort_order: 40
+  sort_order: 200
 
 - name: Evening check-in
   content_type: question
@@ -67,7 +104,7 @@
   periodicity_type: fixed_times
   schedule_times: ["18:00"]
   active: true
-  sort_order: 50
+  sort_order: 300
 
 - name: Night hypnosis
   content_type: audio
@@ -78,4 +115,4 @@
   # 20:00 is well inside the [06:00, 22:00) send window
   schedule_times: ["20:00"]
   active: true
-  sort_order: 60
+  sort_order: 400
