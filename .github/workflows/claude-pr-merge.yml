@@ -42,7 +42,17 @@ jobs:
 
           echo "Waiting for CI checks on SHA: ${HEAD_SHA}"
 
-          # Poll until all required checks are no longer pending/queued/in_progress.
+          # Only the CI checks this gate actually verifies (lint, test) gate the
+          # merge — see GATE_CHECKS. We must NOT wait on every check run on the
+          # SHA: that set includes the sibling autobot stages and this merge job's
+          # OWN check run, which is `in_progress` for the entire poll. Counting it
+          # makes PENDING never reach 0 → 20-minute timeout → needs-human. (Earlier
+          # merges only survived this by a race: the first poll fired before the
+          # job's own check run was indexed; a SHA with many historical checks
+          # loses that race.)
+          GATE_CHECKS='["lint","test"]'
+
+          # Poll until the gate CI checks (lint, test) are no longer pending.
           # Timeout after 20 minutes (120 x 10s polls).
           MAX_POLLS=120
           POLL=0
@@ -62,9 +72,9 @@ jobs:
             # (// [] guards a failed API call that falls back to '[]'.)
             CHECK_JSON=$(gh api --paginate --slurp "repos/${{ github.repository }}/commits/${HEAD_SHA}/check-runs" 2>/dev/null || echo "[]")
 
-            # Count checks still in progress (flattened across all pages)
+            # Count gate checks still in progress (flattened across all pages).
             PENDING=$(echo "$CHECK_JSON" | \
-              jq '[.[] | (.check_runs // [])[] | select(.status == "queued" or .status == "in_progress")] | length')
+              jq --argjson gate "$GATE_CHECKS" '[.[] | (.check_runs // [])[] | select(.name as $n | $gate | index($n)) | select(.status == "queued" or .status == "in_progress")] | length')
 
             echo "Poll ${POLL}/${MAX_POLLS}: ${PENDING} check(s) still pending..."
 
