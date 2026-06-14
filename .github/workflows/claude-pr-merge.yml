@@ -26,6 +26,11 @@ jobs:
       pull-requests: write
       issues: write
       actions: read
+      # checks: read is required for GITHUB_TOKEN to read the commit check-runs
+      # endpoint used by the CI gate below. AUTOMATION_TOKEN (a PAT) is not used
+      # for those reads because it may lack the fine-grained "Checks: read"
+      # permission, which made gh api return an error body and break the gate.
+      checks: read
     steps:
       - uses: actions/checkout@v4
         with:
@@ -42,61 +47,84 @@ jobs:
 
           echo "Waiting for CI checks on SHA: ${HEAD_SHA}"
 
-          # Only the CI checks this gate actually verifies (lint, test) gate the
-          # merge — see GATE_CHECKS. We must NOT wait on every check run on the
-          # SHA: that set includes the sibling autobot stages and this merge job's
-          # OWN check run, which is `in_progress` for the entire poll. Counting it
-          # makes PENDING never reach 0 → 20-minute timeout → needs-human. (Earlier
-          # merges only survived this by a race: the first poll fired before the
-          # job's own check run was indexed; a SHA with many historical checks
-          # loses that race.)
-          GATE_CHECKS='["lint","test"]'
-
-          # Poll until the gate CI checks (lint, test) are no longer pending.
-          # Timeout after 20 minutes (120 x 10s polls).
+          # Only the gate CI checks (lint, test) decide the merge. We must NOT wait
+          # on every check run on the SHA: that set includes the sibling autobot
+          # stages and this merge job's OWN check run (in_progress for the entire
+          # poll), so counting them would never reach 0.
+          #
+          # ROOT CAUSE of the historical "0\n0 / integer expression expected" loop:
+          # the previous code did `gh api ... 2>/dev/null || echo "{}"` and piped
+          # that into a separate jq. When the API call failed, gh wrote its error
+          # body (a JSON object) to STDOUT *and* exited non-zero, so `|| echo "{}"`
+          # appended a second document. jq then emitted one integer PER document
+          # ("0\n0"); PENDING carried a newline and `[ "$PENDING" -eq 0 ]` died with
+          # "integer expression expected", looping to the 20-minute timeout on green
+          # CI. The API failed because the read ran under AUTOMATION_TOKEN (a PAT
+          # that may lack "Checks: read"). Fixes here:
+          #   * read check-runs under GITHUB_TOKEN (has checks:read via permissions);
+          #   * compute the pending count SERVER-SIDE with `gh --jq` (exactly one
+          #     integer is printed, never a multi-document pipe);
+          #   * detect API failure via gh's exit status and retry, instead of
+          #     turning it into a bogus document.
+          #
+          # Fetch ALL check runs in a SINGLE request via ?per_page=100 (no
+          # --paginate): a single page of up to 100 runs is one JSON object.
           MAX_POLLS=120
           POLL=0
+          API_FAILURES=0
+          GATE_READY=false
           while [ $POLL -lt $MAX_POLLS ]; do
             POLL=$((POLL + 1))
 
-            # Fetch ALL check runs in a SINGLE request via ?per_page=100 — do NOT
-            # use --paginate. A SHA re-run by CI accumulates many check runs (>30
-            # for a repeatedly re-labelled PR); with multiple pages, --paginate
-            # emits one JSON document PER PAGE (gh's --slurp does not reliably
-            # collapse them on the runner), so the local jq below ran once per page
-            # and printed e.g. "0\n0". PENDING then carried a newline and the
-            # `[ "$PENDING" -eq 0 ]` test died with "integer expression expected",
-            # looping to the 20-minute timeout and flagging needs-human on green CI.
-            # One page of up to 100 runs is a single object → jq emits exactly one
-            # integer. (// {} guards a failed API call.)
-            CHECK_JSON=$(gh api "repos/${{ github.repository }}/commits/${HEAD_SHA}/check-runs?per_page=100" 2>/dev/null || echo "{}")
-
-            # Count gate checks (lint, test) still in progress.
-            PENDING=$(echo "$CHECK_JSON" | \
-              jq --argjson gate "$GATE_CHECKS" '[(.check_runs // [])[] | select(.name as $n | $gate | index($n)) | select(.status == "queued" or .status == "in_progress")] | length')
-
-            echo "Poll ${POLL}/${MAX_POLLS}: ${PENDING} check(s) still pending..."
-
-            if [ "$PENDING" -eq 0 ]; then
-              echo "All checks completed."
-              break
+            if ! PENDING=$(GH_TOKEN="${{ github.token }}" gh api \
+                  "repos/${{ github.repository }}/commits/${HEAD_SHA}/check-runs?per_page=100" \
+                  --jq '[.check_runs[]? | select(.name == "lint" or .name == "test") | select(.status == "queued" or .status == "in_progress")] | length' \
+                  2>/dev/null); then
+              API_FAILURES=$((API_FAILURES + 1))
+              echo "Poll ${POLL}/${MAX_POLLS}: check-runs API call failed (${API_FAILURES} so far), retrying..."
+              sleep 10
+              continue
             fi
 
-            if [ $POLL -ge $MAX_POLLS ]; then
-              gh pr comment "${PR_NUMBER}" --body "[AUTOBOT ERROR] CI checks timed out after 20 minutes waiting for completion. Setting needs-human for manual review."
-              gh pr edit "${PR_NUMBER}" --add-label "needs-human"
-              exit 1
+            # Defensive: strip everything but digits so an unexpected blank or
+            # multi-line value can never crash the integer test below.
+            PENDING=$(printf '%s' "$PENDING" | tr -cd '0-9')
+            if [ -z "$PENDING" ]; then
+              echo "Poll ${POLL}/${MAX_POLLS}: empty pending count, retrying..."
+              sleep 10
+              continue
+            fi
+
+            echo "Poll ${POLL}/${MAX_POLLS}: ${PENDING} gate check(s) still pending..."
+
+            if [ "$PENDING" -eq 0 ]; then
+              echo "All gate checks completed."
+              GATE_READY=true
+              break
             fi
 
             sleep 10
           done
 
-          # Verify lint and test checks passed (success required; skipped = non-blocking).
-          # Single-request ?per_page=100 + local jq, same as the polling step above.
-          CHECK_JSON=$(gh api "repos/${{ github.repository }}/commits/${HEAD_SHA}/check-runs?per_page=100" 2>/dev/null || echo "{}")
+          if [ "$GATE_READY" != "true" ]; then
+            gh pr comment "${PR_NUMBER}" --body "[AUTOBOT ERROR] CI gate checks (lint, test) did not complete within 20 minutes (${API_FAILURES} API failures). Setting needs-human for manual review."
+            gh pr edit "${PR_NUMBER}" --add-label "needs-human"
+            exit 1
+          fi
 
-          LINT_CONCLUSION=$(echo "$CHECK_JSON" | jq -r '(.check_runs // [])[] | select(.name == "lint") | .conclusion' | head -1)
-          TEST_CONCLUSION=$(echo "$CHECK_JSON" | jq -r '(.check_runs // [])[] | select(.name == "test") | .conclusion' | head -1)
+          # Verify lint and test passed (success required; skipped/neutral non-blocking).
+          # Read once under GITHUB_TOKEN; a failed read is a hard error (do NOT
+          # substitute a fallback document — that is what poisoned the poll loop).
+          if ! CHECK_JSON=$(GH_TOKEN="${{ github.token }}" gh api \
+                "repos/${{ github.repository }}/commits/${HEAD_SHA}/check-runs?per_page=100" \
+                2>/dev/null); then
+            gh pr comment "${PR_NUMBER}" --body "[AUTOBOT ERROR] Could not read CI check runs to verify conclusions. Setting needs-human for manual review."
+            gh pr edit "${PR_NUMBER}" --add-label "needs-human"
+            exit 1
+          fi
+
+          LINT_CONCLUSION=$(printf '%s' "$CHECK_JSON" | jq -r 'first(.check_runs[]? | select(.name == "lint") | .conclusion) // ""')
+          TEST_CONCLUSION=$(printf '%s' "$CHECK_JSON" | jq -r 'first(.check_runs[]? | select(.name == "test") | .conclusion) // ""')
 
           echo "lint conclusion: ${LINT_CONCLUSION}"
           echo "test conclusion: ${TEST_CONCLUSION}"
