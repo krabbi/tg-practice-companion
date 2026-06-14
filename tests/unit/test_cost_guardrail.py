@@ -147,10 +147,26 @@ async def test_guardrail_logs_warning(fake_config, caplog) -> None:
         month_cost_usd=float(fake_config.monthly_cost_limit_usd),
     )
 
-    with caplog.at_level(logging.WARNING, logger="bot.services.analysis_service"):
+    # Attach caplog's handler directly to the service logger instead of relying on
+    # propagation to the root logger. Other tests in the full suite can leave global
+    # logging state altered (root handlers / propagate flags); under pytest 9.1+'s
+    # stricter capture isolation that made caplog.records come back empty here on CI
+    # even though the WARNING was emitted (the bug that landed a red test on main).
+    # Capturing at the source is immune to that cross-test pollution.
+    svc_logger = logging.getLogger("bot.services.analysis_service")
+    prev_level = svc_logger.level
+    svc_logger.addHandler(caplog.handler)
+    svc_logger.setLevel(logging.WARNING)
+    try:
         await svc.build(user_id=USER_ID, analysis_date=TARGET_DATE, lang="ru")
+    finally:
+        svc_logger.removeHandler(caplog.handler)
+        svc_logger.setLevel(prev_level)
 
-    assert any("guardrail" in record.message.lower() for record in caplog.records)
+    # Use record.getMessage() (computed on demand) rather than record.message: the
+    # latter is only populated once a Formatter has formatted the record, which
+    # pytest does not guarantee for captured records.
+    assert any("guardrail" in record.getMessage().lower() for record in caplog.records)
 
 
 @pytest.mark.asyncio

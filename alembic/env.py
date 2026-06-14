@@ -14,7 +14,13 @@ from bot.models.base import Base
 config = context.config
 
 if config.config_file_name is not None:
-    fileConfig(config.config_file_name)
+    # disable_existing_loggers=False: the default (True) disables every logger
+    # already created at import time — including the app's "bot.*" loggers. In
+    # production that would silently mute app logging whenever a migration runs;
+    # in the test suite, integration tests run alembic before the unit tests, so
+    # it disabled bot.services.analysis_service and made a caplog-based test fail
+    # (a disabled logger drops records regardless of handlers).
+    fileConfig(config.config_file_name, disable_existing_loggers=False)
 
 target_metadata = Base.metadata
 
