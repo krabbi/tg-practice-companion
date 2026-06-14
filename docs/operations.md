@@ -232,3 +232,4 @@ and slot 06 is now admitted regardless — phase is unchanged.
 Use `python -m cli.seed practices content/practices.yaml` to load or update practice rows.
 The seed is idempotent (upserts by `name`). See `content/practices.example.yaml` for the
 full YAML schema and the reference daily cycle.
+
