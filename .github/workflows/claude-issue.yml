@@ -51,13 +51,33 @@ jobs:
             оставь в issue комментарий со ссылкой на PR.
             Если issue непонятен — не выдумывай: задай уточняющие вопросы
             комментарием в issue и сними метку claude-in-progress.
+
+            ГРАНИЦЫ РОЛИ — соблюдай строго:
+            - Твоя работа ЗАКАНЧИВАЕТСЯ на открытии PR. НЕ делай code review,
+              НЕ ставь аппрув, НЕ мержи PR (никаких `gh pr merge`), НЕ закрывай
+              PR или issue вручную. Ревью, продуктовую приёмку и мерж выполняют
+              отдельные staged-воркфлоу, запускаемые по меткам. Если ты смержишь
+              PR сам — ты в обход всех гейтов вкатишь в main непроверенный код
+              (branch protection на этом репозитории недоступна, ты — гейт).
+            - Локальный прогон тестов идёт по sqlite; финальный гейт — это CI на
+              PR (реальный Postgres). НЕ объявляй задачу готовой по локальному
+              прогону: дождись зелёного CI или хотя бы не утверждай, что «все
+              тесты прошли», если ты не видел зелёный CI на PR.
+            - Финал: один комментарий в issue со ссылкой на открытый PR — и стоп.
           # By default the action allows only file ops + read-only git +
           # comments, so the agent's gh/git/make/pytest calls were denied
           # (run 27470462321: permission_denials_count=8, is_error=true).
           # Bare "Bash" grants all shell commands; the rest let it edit files.
+          # disallowedTools is the deterministic backstop for the role boundary
+          # above: with no branch protection available (private repo, free plan)
+          # the prompt alone is the only guard, so we also hard-block the gh
+          # subcommands that would let the agent merge/close past the staged
+          # gates (see PR that introduced this; root cause: a single issue agent
+          # self-merged a red PR, bypassing review + the CI merge gate).
           claude_args: |
             --max-turns 50
             --allowedTools "Bash,Edit,Write,Read,Glob,Grep,MultiEdit"
+            --disallowedTools "Bash(gh pr merge:*),Bash(gh pr close:*),Bash(gh issue close:*),Bash(gh pr review:*)"
 
       # Post-agent verification: find the PR opened for this issue.
       # conclusion:success on the action does NOT mean the agent succeeded —
@@ -73,7 +93,18 @@ jobs:
             PR_URL=$(gh pr list --state open --json url,body --jq ".[] | select(.body | test(\"#${ISSUE_NUMBER}\")) | .url" 2>/dev/null | head -1 || true)
           fi
           if [ -z "$PR_URL" ]; then
-            gh issue comment "${ISSUE_NUMBER}" --body "[AUTOBOT ERROR] The coder agent ran but no PR was found for issue #${ISSUE_NUMBER}. Manual intervention required."
+            # No OPEN PR. Distinguish "agent opened nothing" from "agent overstepped
+            # and already merged/closed a PR" — the latter means it bypassed the
+            # staged review/merge gates, which is a much more serious anomaly and
+            # was previously masked behind a misleading "no PR found" message.
+            CLOSED_PR=$(gh pr list --state all --search "Closes #${ISSUE_NUMBER}" --json number,state,url --jq '.[0] | "\(.number)\t\(.state)\t\(.url)"' 2>/dev/null || true)
+            if [ -n "$CLOSED_PR" ]; then
+              PR_N=$(printf '%s' "$CLOSED_PR" | cut -f1)
+              PR_STATE=$(printf '%s' "$CLOSED_PR" | cut -f2)
+              gh issue comment "${ISSUE_NUMBER}" --body "[AUTOBOT ERROR] PR #${PR_N} for issue #${ISSUE_NUMBER} is already ${PR_STATE} — the issue agent merged/closed it itself, bypassing the staged review + CI merge gates. main may now contain unreviewed or CI-failing code. Manual intervention required: verify main is green and that the change passed review."
+            else
+              gh issue comment "${ISSUE_NUMBER}" --body "[AUTOBOT ERROR] The coder agent ran but no PR was found for issue #${ISSUE_NUMBER}. Manual intervention required."
+            fi
             gh issue edit "${ISSUE_NUMBER}" --add-label "needs-human"
             exit 1
           fi

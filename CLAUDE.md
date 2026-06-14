@@ -92,7 +92,15 @@ occasional luxury, not a routine step.
 - Every PR needs `pr-reviewer` **APPROVED** before merge.
 - PRs that change `docs/user_guide.md` also need `product-manager` **PRODUCT APPROVED**.
 - The PR's CI checks must be **green** before merge (`gh pr checks <N> --watch --fail-fast`) —
-  local test runs can silently skip CI-only tests. Branch protection on `main` enforces this.
+  local test runs can silently skip CI-only tests (the suite runs against real Postgres in CI
+  but sqlite locally, and pytest versions differ — never declare "tests pass" from a local run).
+- **There is NO branch protection on `main`.** GitHub branch protection / rulesets require a paid
+  plan or a public repo; this repo is private on the free plan, so the API returns 403 and no
+  enforced gate exists. The merge gates above are enforced **only** by the staged label-driven
+  workflows — nothing at the git level stops a direct push or an agent self-merge. Therefore the
+  implementing agent (`claude-issue.yml`, `claude-sweeper.yml`) must stop at "open PR" and never
+  merge/close PRs itself (enforced via prompt + `--disallowedTools`); merge happens solely in
+  `claude-pr-merge.yml` after the CI gate.
 - Merge is owned by the orchestrator (`/implement-task`); the coder agent merges only
   when invoked standalone and never when told "do not merge".
 
