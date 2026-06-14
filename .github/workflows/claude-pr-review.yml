@@ -39,11 +39,20 @@ jobs:
 
       # F5: remove both outcome labels before running the agent so a stale
       # label from a previous round cannot pass the post-agent check.
-      - name: Clear outcome labels
+      #
+      # Also remove our OWN trigger label (needs-code-review): GitHub emits no
+      # `labeled` event when a label is re-added that already exists, so if this
+      # stage left needs-code-review in place, the code-fix stage's
+      # `--add-label needs-code-review` (its way of restarting review after a fix)
+      # would be a silent no-op and the pipeline would stall after the first fix
+      # round. Clearing it here when we take the PR makes that re-add a real
+      # 0->1 transition that fires this workflow again.
+      - name: Clear trigger and outcome labels
         env:
           GH_TOKEN: ${{ secrets.AUTOMATION_TOKEN }}
         run: |
           PR_NUMBER="${{ github.event.pull_request.number }}"
+          gh pr edit "${PR_NUMBER}" --remove-label "needs-code-review" || true
           gh pr edit "${PR_NUMBER}" --remove-label "code-approved" || true
           gh pr edit "${PR_NUMBER}" --remove-label "code-changes-requested" || true
 
