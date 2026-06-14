@@ -93,10 +93,11 @@ One row per whitelisted Telegram user.
 | `language` | `String(8)` | NO | `"ru"` | UI language code |
 | `skip_until` | `Date` | YES | — | No practices sent until this date (AC-18 skip-day, M1) |
 | `tz_changed_at` | `DateTime(tz=True)` | YES | — | UTC instant of last timezone change; consumed by the backward-jump guard (M1/M5) |
+| `last_blessing_date` | `Date` | YES | — | Date morning blessing was last sent; daily dedup guard (M3.4) |
 | `created_at` | `DateTime(tz=True)` | NO | `now()` | Row creation timestamp |
 | `updated_at` | `DateTime(tz=True)` | NO | `now()` | Last update timestamp |
 
-Migration: `alembic/versions/0001_initial_schema.py`
+Migrations: `alembic/versions/0001_initial_schema.py` (initial columns); `alembic/versions/0005_user_blessing_date.py` (added `last_blessing_date`).
 
 ### `pending_prompts` (M2)
 
@@ -283,6 +284,7 @@ The journal catch-all carries `StateFilter(None)` so it yields whenever an FSM s
 | `LlmClient` | `bot/services/llm_client.py` | Anthropic Messages API wrapper; returns `(text, usage)` for cost recording |
 | `UsageService` | `bot/services/usage_service.py` | Record `ApiUsageLog` rows; compute `month_to_date_cost()` for the guardrail (AC-16) |
 | `AnalysisService` | `bot/services/analysis_service.py` | Build the once-daily morning AI analysis: query stats, enforce cost guardrail, call LLM with supportive AC-13 prompt, persist `DailyAiAnalysis` row (AC-11, AC-16) |
+| `BlessingService` | `bot/services/blessing_service.py` | Select today's morning blessing by date-derived round-robin (`today.toordinal() % count`); idempotent for the same date (AC-3) |
 
 ### Repositories (M1 + M2 + M3)
 
@@ -309,10 +311,13 @@ The journal catch-all carries `StateFilter(None)` so it yields whenever an FSM s
 - Reads the DB every run — nothing is materialized at boot. Data changes (new practice rows, timezone edits) take effect on the next minute without restart (AC-4, AC-18).
 - Flow per tick:
   1. `now_utc = datetime.now(UTC)` → resolve user's local timezone → `local_now`.
-  2. Short-circuit if outside the send window `[send_window_start, send_window_end)`.
-  3. Short-circuit if `user.skip_until >= local_now.date()` (AC-5).
-  4. `practice_service.due_now(local_now)` → list of due practices.
-  5. For each practice: compute `slot_key = "YYYY-MM-DDTHH:MM"` → apply backward-tz-jump guard → `practice_send_repository.try_claim(...)` (insert-or-skip on unique index) → if claimed, **first commit** (persists the claim), then `delivery_service.send(practice, user)` (writes `pending_prompt` for `question` practices via flush), then **second commit** (persists the `pending_prompt`).
+  2. If `local_now.hour == _MORNING_BLOCK_HOUR` and `minute == 0`: dispatch `run_morning_analysis` as a one-shot APScheduler job (before the send-window check, so the analysis always fires regardless of send-window reconfiguration).
+  3. Short-circuit if outside the send window `[send_window_start, send_window_end)`.
+  4. Short-circuit if `user.skip_until >= local_now.date()` (AC-5).
+  5. If `local_now.hour == _MORNING_BLOCK_HOUR` and `minute == 0` and `user.last_blessing_date != today`: call `BlessingService.for_date(today)` → if a blessing is found, set `user.last_blessing_date = today`, **commit** (claim before send), then `bot.send_message(blessing.text)`.
+  6. `practice_service.due_now(local_now)` → list of due practices.
+  7. Sort due practices with `compose()` (ascending `sort_order`).
+  8. For each practice: compute `slot_key = "YYYY-MM-DDTHH:MM"` → apply backward-tz-jump guard → `practice_send_repository.try_claim(...)` (insert-or-skip on unique index) → if claimed, **first commit** (persists the claim), then `delivery_service.send(practice, user)` (writes `pending_prompt` for `question` practices via flush), then **second commit** (persists the `pending_prompt`).
 
 ### Send-window convention
 
@@ -322,11 +327,15 @@ Half-open interval `[send_window_start, send_window_end)` in local wall time. De
 
 Before claiming a slot, the tick converts `user.tz_changed_at` (UTC) into the current zone and refuses to claim any slot whose local wall-time precedes that instant. This prevents westward timezone jumps from replaying already-passed slots. Forward jumps skip slots with no catch-up.
 
-### Morning analysis dispatch seam
+### Morning block (06:00)
 
-The once-daily morning LLM analysis is never awaited inline inside `tick`. When the local clock first reaches `_MORNING_ANALYSIS_HOUR` (07:00), `tick` enqueues `run_morning_analysis` as a separate one-shot APScheduler job (`max_instances=1`).
+At `_MORNING_BLOCK_HOUR` (06:00) local time, the tick fires three sequential steps:
 
-`run_morning_analysis` opens its own session, resolves yesterday's date in the user's local timezone, builds `AnalysisService`, and calls `AnalysisService.build(user_id, analysis_date, lang)`. The service is idempotent per `(user_id, analysis_date)` so concurrent dispatches are safe. After `build` returns, the job sends the `result.message` to the user via `bot.send_message`; send failures are logged but do not raise (the analysis row is already persisted).
+1. **Analysis dispatch (before send-window check):** `run_morning_analysis` is enqueued as a separate one-shot APScheduler job (`max_instances=1`, `replace_existing=True`). The job is dispatched before the send-window guard so the AI analysis always fires even if the send window is reconfigured to start after 06:00. The job opens its own session, resolves yesterday's date in the user's local timezone, builds `AnalysisService`, and calls `AnalysisService.build(user_id, analysis_date, lang)`. The service is idempotent per `(user_id, analysis_date)` so concurrent dispatches are safe. After `build` returns, the job sends `result.message` via `bot.send_message`; send failures are logged but do not raise (the analysis row is already persisted).
+
+2. **Blessing rotation (after send-window check, before practice loop):** `BlessingService.for_date(today)` selects the active blessing using `today.toordinal() % len(active_blessings)`, advancing round-robin through blessings sorted by `rotation_order`. Idempotency is enforced by `user.last_blessing_date`: the tick only sends a blessing when `last_blessing_date != today`. The claim (`user.last_blessing_date = today`) is committed **before** `bot.send_message` so a bot restart at :00 never double-sends (consistent with the practice claim-before-send pattern). Send failures are logged and do not un-claim the date.
+
+3. **Practice delivery:** `practice_service.due_now(local_now)` returns the due practices, sorted by `compose()` (`sort_order` ascending). The reference ordering from `content/practices.yaml`: morning practice (sort_order ≤ 30), motivational image (sort_order ≤ 40), hourly questions (sort_order ≥ 100, after the morning block). Each practice goes through the backward-tz-jump guard and `try_claim` idempotency check before delivery.
 
 ### `housekeeping` (daily at 03:00 UTC)
 

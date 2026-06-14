@@ -237,12 +237,12 @@ async def test_start_scheduler_registers_tick_with_correct_options(config) -> No
 
 @pytest.mark.asyncio
 async def test_morning_analysis_dispatched_as_separate_job(seeded_session, config) -> None:
-    """At _MORNING_ANALYSIS_HOUR:00 local time, tick dispatches morning_analysis as a
+    """At _MORNING_BLOCK_HOUR:00 local time, tick dispatches morning_analysis as a
     one-shot APScheduler job — never awaited inline.
     """
     factory = seeded_session
-    # 07:00 UTC (user is in UTC, so local == UTC)
-    utc_dt = datetime(2026, 6, 10, 7, 0, tzinfo=UTC)
+    # 06:00 UTC (user is in UTC, so local == UTC; morning block fires at hour 6)
+    utc_dt = datetime(2026, 6, 10, 6, 0, tzinfo=UTC)
 
     mock_scheduler = MagicMock()
     await run_tick(factory, config, utc_dt, scheduler=mock_scheduler)
