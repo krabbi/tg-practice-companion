@@ -14,7 +14,7 @@ from bot.models.morning import DailyAiAnalysis
 from bot.repositories.analysis_repository import AnalysisRepository
 from bot.repositories.journal_repository import JournalRepository
 from bot.services.llm_client import LlmClient
-from bot.services.usage_service import UsageKind, UsageService
+from bot.services.usage_service import UsageKind, UsageService, compute_llm_cost
 
 logger = logging.getLogger(__name__)
 
@@ -190,8 +190,6 @@ class AnalysisService:
         Uses the upper-bound token estimate to pre-check the guardrail before
         the actual API call.  This avoids exceeding the cap by one call's worth.
         """
-        from bot.services.usage_service import compute_llm_cost
-
         return compute_llm_cost(
             self._llm_client.model,
             input_tokens=_ESTIMATED_INPUT_TOKENS,

@@ -38,7 +38,6 @@ _RU: dict[str, str] = {
         "Доброе утро! Ты молодец — каждый день ты делаешь шаги вперёд. "
         "Продолжай практиковать — у тебя всё получится!"
     ),
-    "analysis_already_done": "Анализ за сегодня уже готов.",
 }
 
 # English strings — complete canonical set; used when lang == "en" or as fallback.
@@ -75,7 +74,6 @@ _EN: dict[str, str] = {
         "Good morning! You're doing great — every day you take steps forward. "
         "Keep practising — you can do it!"
     ),
-    "analysis_already_done": "Today's analysis is already ready.",
 }
 
 _STRINGS: dict[str, dict[str, str]] = {"ru": _RU, "en": _EN}

@@ -67,9 +67,7 @@ async def run_morning_analysis(bot, session_factory: async_sessionmaker, config:
 
         # analysis_date is *yesterday* in the user's local timezone
         now_local = datetime.now(UTC).astimezone(user_tz)
-        from datetime import timedelta as _td
-
-        analysis_date = (now_local - _td(days=1)).date()
+        analysis_date = (now_local - timedelta(days=1)).date()
         lang = user.language
 
         journal_repo = JournalRepository(session)
