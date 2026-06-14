@@ -49,17 +49,22 @@ jobs:
           while [ $POLL -lt $MAX_POLLS ]; do
             POLL=$((POLL + 1))
 
-            # Fetch the raw check-runs response. Do NOT use gh's --jq here: with
-            # `--jq '.check_runs'` gh unwraps the array and prints each element on
-            # its own line, so a second `jq '.[]'` receives loose objects (not an
-            # array) and dies with "Cannot index string with string". Fetch the
-            # whole object and index .check_runs locally (// [] guards a failed API
-            # call that falls back to '{}').
-            CHECK_JSON=$(gh api "repos/${{ github.repository }}/commits/${HEAD_SHA}/check-runs" 2>/dev/null || echo "{}")
+            # Fetch check runs with `--paginate --slurp`: this ALWAYS returns a
+            # single JSON document — an array of per-page objects — even when the
+            # API spreads results over multiple pages (a SHA re-run by CI can
+            # accumulate >30 check runs). Do NOT use gh's `--jq` here (it is also
+            # incompatible with --slurp); pipe the raw array into local jq and
+            # flatten .check_runs across pages. This guarantees jq emits exactly
+            # one integer: without --slurp, multi-document output made jq print one
+            # length per document, so PENDING became e.g. "0\n0" and the `[ -eq ]`
+            # test below died with "integer expression expected", looping to the
+            # 20-minute timeout and flagging needs-human even on green CI.
+            # (// [] guards a failed API call that falls back to '[]'.)
+            CHECK_JSON=$(gh api --paginate --slurp "repos/${{ github.repository }}/commits/${HEAD_SHA}/check-runs" 2>/dev/null || echo "[]")
 
-            # Count checks still in progress
+            # Count checks still in progress (flattened across all pages)
             PENDING=$(echo "$CHECK_JSON" | \
-              jq '[(.check_runs // [])[] | select(.status == "queued" or .status == "in_progress")] | length')
+              jq '[.[] | (.check_runs // [])[] | select(.status == "queued" or .status == "in_progress")] | length')
 
             echo "Poll ${POLL}/${MAX_POLLS}: ${PENDING} check(s) still pending..."
 
@@ -78,12 +83,12 @@ jobs:
           done
 
           # Verify lint and test checks passed (success required; skipped = non-blocking).
-          # Raw response + local .check_runs indexing (see the polling step above for
-          # why gh's --jq must not unwrap the array here).
-          CHECK_JSON=$(gh api "repos/${{ github.repository }}/commits/${HEAD_SHA}/check-runs" 2>/dev/null || echo "{}")
+          # Same `--paginate --slurp` + local jq pattern as the polling step above:
+          # one JSON array document, flattened across pages.
+          CHECK_JSON=$(gh api --paginate --slurp "repos/${{ github.repository }}/commits/${HEAD_SHA}/check-runs" 2>/dev/null || echo "[]")
 
-          LINT_CONCLUSION=$(echo "$CHECK_JSON" | jq -r '(.check_runs // [])[] | select(.name == "lint") | .conclusion' | head -1)
-          TEST_CONCLUSION=$(echo "$CHECK_JSON" | jq -r '(.check_runs // [])[] | select(.name == "test") | .conclusion' | head -1)
+          LINT_CONCLUSION=$(echo "$CHECK_JSON" | jq -r '.[] | (.check_runs // [])[] | select(.name == "lint") | .conclusion' | head -1)
+          TEST_CONCLUSION=$(echo "$CHECK_JSON" | jq -r '.[] | (.check_runs // [])[] | select(.name == "test") | .conclusion' | head -1)
 
           echo "lint conclusion: ${LINT_CONCLUSION}"
           echo "test conclusion: ${TEST_CONCLUSION}"
