@@ -10,7 +10,17 @@ on:
 
 jobs:
   solve:
-    if: contains(github.event.issue.labels.*.name, 'claude-ready')
+    # Two-part guard. (1) The issue must carry claude-ready at all. (2) On a
+    # `labeled` event, the ADDED label must itself be claude-ready — otherwise
+    # the agent labelling the issue claude-in-progress mid-run fires a second
+    # `labeled` event whose actor is claude[bot], and claude-code-action's
+    # non-human-actor guard kills that run (and it would otherwise duplicate the
+    # in-flight task). On `opened`, github.event.label is null, so the OR clause
+    # lets it through. Service labels (claude-in-progress, needs-human, …) no
+    # longer self-trigger this workflow.
+    if: |
+      contains(github.event.issue.labels.*.name, 'claude-ready')
+      && (github.event.action != 'labeled' || github.event.label.name == 'claude-ready')
     # Deterministic anti-race (see claude-pr-review.yml). This workflow fires on
     # issues opened/labeled; only an issue that actually carries claude-ready
     # joins the shared `claude-worker` group (strictly one Claude agent at a
@@ -75,7 +85,7 @@ jobs:
           # gates (see PR that introduced this; root cause: a single issue agent
           # self-merged a red PR, bypassing review + the CI merge gate).
           claude_args: |
-            --max-turns 50
+            --max-turns 250
             --allowedTools "Bash,Edit,Write,Read,Glob,Grep,MultiEdit"
             --disallowedTools "Bash(gh pr merge:*),Bash(gh pr close:*),Bash(gh issue close:*),Bash(gh pr review:*)"
 
@@ -105,7 +115,12 @@ jobs:
             else
               gh issue comment "${ISSUE_NUMBER}" --body "[AUTOBOT ERROR] The coder agent ran but no PR was found for issue #${ISSUE_NUMBER}. Manual intervention required."
             fi
-            gh issue edit "${ISSUE_NUMBER}" --add-label "needs-human"
+            # Release the queue lock and the ready opt-in: needs-human now owns
+            # this issue, so neither the instant workflow nor the sweeper should
+            # re-pick it. Without this the issue stays stuck in claude-in-progress
+            # for up to 24h until the sweeper's stale-lock recovery fires.
+            gh issue edit "${ISSUE_NUMBER}" --add-label "needs-human" \
+              --remove-label "claude-in-progress" --remove-label "claude-ready" || true
             exit 1
           fi
           echo "PR found: ${PR_URL}"
