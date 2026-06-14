@@ -280,6 +280,8 @@ The journal catch-all carries `StateFilter(None)` so it yields whenever an FSM s
 | `JournalService` | `bot/services/journal_service.py` | Capture replies: resolve binding, create `JournalEntry`, consume prompt |
 | `AssessmentService` | `bot/services/assessment_service.py` | Record `SelfAssessment`; `needs_clarify` guard for the sweep |
 | `TranscriptionService` | `bot/services/transcription_service.py` | Groq Whisper transcription; optional (None when key absent) |
+| `LlmClient` | `bot/services/llm_client.py` | Anthropic Messages API wrapper; returns `(text, usage)` for cost recording |
+| `UsageService` | `bot/services/usage_service.py` | Record `ApiUsageLog` rows; compute `month_to_date_cost()` for the guardrail (AC-16) |
 
 ### Repositories (M1 + M2 + M3)
 
@@ -385,5 +387,34 @@ All domain exceptions extend `PracticeCompanionError` in `bot/exceptions.py`.
 
 ## Cost accounting
 
-_Filled by M3: `api_usage_logs`, per-model price table, month-to-date guardrail (AC-16),
-per-run analysis cap $0.05 (AC-11)._
+Every product LLM/API call records a row in `api_usage_logs` (AC-16).
+
+### Price table (`bot/services/usage_service.py`)
+
+| Model | Input (per token) | Output (per token) | Source |
+|---|---|---|---|
+| `claude-haiku-4-5-20251001` | $0.0000008 ($0.80/1M) | $0.000004 ($4.00/1M) | Anthropic pricing 2025-10 |
+
+Groq Whisper: $0.111/hour ≈ $3.083×10⁻⁵/second.
+
+### Guardrails
+
+| Guardrail | Config field | Default | Enforced by |
+|---|---|---|---|
+| Monthly spend cap | `monthly_cost_limit_usd` | `$10.00` | `UsageService.month_to_date_cost()` checked in `analysis_service` |
+| Per-run analysis cap | `analysis_cost_cap_usd` | `$0.05` | checked before each morning analysis LLM call (AC-11) |
+
+A Haiku call with ~1000 input + 220 output tokens costs ≈ $0.0017, well under the $0.05 per-run cap.
+
+### Recording usage
+
+```python
+# LLM call
+text, usage = await self._llm_client.complete(system=..., user=..., max_tokens=220)
+await self._usage_service.record(kind=UsageKind.analysis, model=self._llm_client.model, usage=usage)
+await self._session.commit()
+
+# Transcription call
+transcript = await transcription_service.transcribe(audio_bytes)
+await usage_service.record(kind=UsageKind.transcription, model="whisper-large-v3-turbo", audio_seconds=duration)
+```
