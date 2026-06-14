@@ -6,7 +6,7 @@ Covers:
 - tick: delivery raises → logs error but does NOT re-raise (slot stays claimed)
 - tick: outside send window → returns early
 - housekeeping: calls prune_older_than and commits
-- run_morning_analysis: logs stub message (smoke test)
+- run_morning_analysis: dispatches analysis_service, sends message to user
 """
 
 import uuid
@@ -261,18 +261,93 @@ async def test_housekeeping_prunes_and_commits() -> None:
 
 
 # ---------------------------------------------------------------------------
-# run_morning_analysis (stub smoke test)
+# run_morning_analysis
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
-async def test_run_morning_analysis_is_a_noop_stub() -> None:
-    """run_morning_analysis logs info and returns without raising."""
+async def test_run_morning_analysis_skips_when_no_user() -> None:
+    """run_morning_analysis returns early (no send) when no user exists in DB."""
+    mock_user_repo = MagicMock()
+    mock_user_repo.get_first = AsyncMock(return_value=None)
+
+    mock_session = MagicMock()
+    mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+    mock_session.__aexit__ = AsyncMock(return_value=False)
+    mock_factory = MagicMock(return_value=mock_session)
+
     mock_bot = MagicMock()
-    mock_factory = MagicMock()
+    mock_bot.send_message = AsyncMock()
     config = make_config()
 
-    with patch("bot.scheduler.logger") as mock_logger:
+    with patch("bot.scheduler.UserRepository", return_value=mock_user_repo):
         await run_morning_analysis(mock_bot, mock_factory, config)
 
-    mock_logger.info.assert_called_once()
+    mock_bot.send_message.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_run_morning_analysis_sends_message_to_user() -> None:
+    """run_morning_analysis calls AnalysisService.build and sends the message."""
+    from bot.services.analysis_service import AnalysisResult
+
+    user = make_user(timezone="UTC")
+    mock_user_repo = MagicMock()
+    mock_user_repo.get_first = AsyncMock(return_value=user)
+
+    mock_session = MagicMock()
+    mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+    mock_session.__aexit__ = AsyncMock(return_value=False)
+    mock_factory = MagicMock(return_value=mock_session)
+
+    import uuid
+
+    fake_result = AnalysisResult(
+        analysis_id=uuid.uuid4(),
+        message="Great job yesterday!",
+        n_total=3,
+        n_leads=2,
+        used_fallback=False,
+    )
+    mock_analysis_service = MagicMock()
+    mock_analysis_service.build = AsyncMock(return_value=fake_result)
+
+    mock_bot = MagicMock()
+    mock_bot.send_message = AsyncMock()
+    config = make_config()
+
+    with (
+        patch("bot.scheduler.UserRepository", return_value=mock_user_repo),
+        patch("bot.scheduler.AnalysisService", return_value=mock_analysis_service),
+        patch("bot.scheduler.JournalRepository"),
+        patch("bot.scheduler.AnalysisRepository"),
+        patch("bot.scheduler.ApiUsageRepository"),
+        patch("bot.scheduler.LlmClient"),
+        patch("bot.scheduler.UsageService"),
+    ):
+        await run_morning_analysis(mock_bot, mock_factory, config)
+
+    mock_analysis_service.build.assert_awaited_once()
+    mock_bot.send_message.assert_awaited_once_with(user.telegram_id, "Great job yesterday!")
+
+
+@pytest.mark.asyncio
+async def test_run_morning_analysis_invalid_timezone_returns_early() -> None:
+    """run_morning_analysis logs a warning and returns early for invalid timezone."""
+    user = make_user(timezone="Invalid/Zone")
+    mock_user_repo = MagicMock()
+    mock_user_repo.get_first = AsyncMock(return_value=user)
+
+    mock_session = MagicMock()
+    mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+    mock_session.__aexit__ = AsyncMock(return_value=False)
+    mock_factory = MagicMock(return_value=mock_session)
+
+    mock_bot = MagicMock()
+    mock_bot.send_message = AsyncMock()
+    config = make_config()
+
+    with patch("bot.scheduler.UserRepository", return_value=mock_user_repo):
+        await run_morning_analysis(mock_bot, mock_factory, config)
+
+    mock_bot.send_message.assert_not_awaited()

@@ -1,11 +1,21 @@
 """Repository for JournalEntry records."""
 
 import uuid
+from dataclasses import dataclass
+from datetime import date
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from bot.models.journal import JournalEntry
+from bot.models.journal import JournalEntry, SelfAssessment
+
+
+@dataclass(frozen=True)
+class DailyStats:
+    """Count of yesterday's journal entries and those marked as leading to goals."""
+
+    n_total: int
+    n_leads: int
 
 
 class JournalRepository:
@@ -40,3 +50,33 @@ class JournalRepository:
             select(JournalEntry).where(JournalEntry.id == entry_id)
         )
         return result.scalar_one_or_none()
+
+    async def daily_stats(self, user_id: int, target_date: date) -> DailyStats:
+        """Return n_total and n_leads for a user's journal entries on target_date.
+
+        Counts all JournalEntry rows whose created_at falls on target_date (date
+        comparison is done by casting to DATE in the DB).  n_leads counts how many
+        of those entries have a SelfAssessment with leads_to_goals=True.
+        """
+        # Total entries on the target date (cast DateTime → Date for comparison)
+        total_result = await self._session.execute(
+            select(func.count(JournalEntry.id)).where(
+                JournalEntry.user_id == user_id,
+                func.date(JournalEntry.created_at) == target_date,
+            )
+        )
+        n_total: int = total_result.scalar_one() or 0
+
+        # Entries that have a self-assessment marking them as leading to goals
+        leads_result = await self._session.execute(
+            select(func.count(JournalEntry.id))
+            .join(SelfAssessment, SelfAssessment.journal_entry_id == JournalEntry.id)
+            .where(
+                JournalEntry.user_id == user_id,
+                func.date(JournalEntry.created_at) == target_date,
+                SelfAssessment.leads_to_goals.is_(True),
+            )
+        )
+        n_leads: int = leads_result.scalar_one() or 0
+
+        return DailyStats(n_total=n_total, n_leads=n_leads)

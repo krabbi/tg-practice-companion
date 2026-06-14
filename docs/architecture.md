@@ -282,6 +282,7 @@ The journal catch-all carries `StateFilter(None)` so it yields whenever an FSM s
 | `TranscriptionService` | `bot/services/transcription_service.py` | Groq Whisper transcription; optional (None when key absent) |
 | `LlmClient` | `bot/services/llm_client.py` | Anthropic Messages API wrapper; returns `(text, usage)` for cost recording |
 | `UsageService` | `bot/services/usage_service.py` | Record `ApiUsageLog` rows; compute `month_to_date_cost()` for the guardrail (AC-16) |
+| `AnalysisService` | `bot/services/analysis_service.py` | Build the once-daily morning AI analysis: query stats, enforce cost guardrail, call LLM with supportive AC-13 prompt, persist `DailyAiAnalysis` row (AC-11, AC-16) |
 
 ### Repositories (M1 + M2 + M3)
 
@@ -291,7 +292,7 @@ The journal catch-all carries `StateFilter(None)` so it yields whenever an FSM s
 | `PracticeRepository` | `bot/repositories/practice_repository.py` | Practice + MediaAsset CRUD; `get_active_practices`, `get_by_name` |
 | `PracticeSendRepository` | `bot/repositories/practice_send_repository.py` | `try_claim` (insert-or-skip), `prune_older_than` |
 | `PendingPromptRepository` | `bot/repositories/pending_prompt_repository.py` | `create`, `get_by_telegram_message_id`, `newest_unconsumed`, `mark_consumed`, `mark_clarify_sent` |
-| `JournalRepository` | `bot/repositories/journal_repository.py` | `create`, `get_by_id` |
+| `JournalRepository` | `bot/repositories/journal_repository.py` | `create`, `get_by_id`, `daily_stats(user_id, date)` → `DailyStats(n_total, n_leads)` |
 | `SelfAssessmentRepository` | `bot/repositories/self_assessment_repository.py` | `create`, `get_by_entry_id` |
 | `BlessingRepository` | `bot/repositories/blessing_repository.py` | `save`, `get_by_id`, `get_active_ordered` |
 | `ImageRepository` | `bot/repositories/image_repository.py` | `save`, `get_by_id`, `get_active` |
@@ -323,7 +324,9 @@ Before claiming a slot, the tick converts `user.tz_changed_at` (UTC) into the cu
 
 ### Morning analysis dispatch seam
 
-The once-daily morning LLM analysis is never awaited inline inside `tick`. When due (M3), `tick` enqueues it as a separate one-shot APScheduler job (`run_morning_analysis`, `max_instances=1`). The dispatch seam is wired here; the job body lands in M3.
+The once-daily morning LLM analysis is never awaited inline inside `tick`. When the local clock first reaches `_MORNING_ANALYSIS_HOUR` (07:00), `tick` enqueues `run_morning_analysis` as a separate one-shot APScheduler job (`max_instances=1`).
+
+`run_morning_analysis` opens its own session, resolves yesterday's date in the user's local timezone, builds `AnalysisService`, and calls `AnalysisService.build(user_id, analysis_date, lang)`. The service is idempotent per `(user_id, analysis_date)` so concurrent dispatches are safe. After `build` returns, the job sends the `result.message` to the user via `bot.send_message`; send failures are logged but do not raise (the analysis row is already persisted).
 
 ### `housekeeping` (daily at 03:00 UTC)
 
