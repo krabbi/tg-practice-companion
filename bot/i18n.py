@@ -33,6 +33,12 @@ _RU: dict[str, str] = {
     # assessment errors
     "assessment_failed": "Не удалось сохранить оценку. Попробуй ещё раз.",
     "assessment_already_set": "Оценка уже записана.",
+    # daily AI analysis (AC-11, AC-13)
+    "analysis_fallback": (
+        "Доброе утро! Ты молодец — каждый день ты делаешь шаги вперёд. "
+        "Продолжай практиковать — у тебя всё получится!"
+    ),
+    "analysis_already_done": "Анализ за сегодня уже готов.",
 }
 
 # English strings — complete canonical set; used when lang == "en" or as fallback.
@@ -64,6 +70,12 @@ _EN: dict[str, str] = {
     # assessment errors
     "assessment_failed": "Could not save your assessment. Please try again.",
     "assessment_already_set": "Assessment already recorded.",
+    # daily AI analysis (AC-11, AC-13)
+    "analysis_fallback": (
+        "Good morning! You're doing great — every day you take steps forward. "
+        "Keep practising — you can do it!"
+    ),
+    "analysis_already_done": "Today's analysis is already ready.",
 }
 
 _STRINGS: dict[str, dict[str, str]] = {"ru": _RU, "en": _EN}

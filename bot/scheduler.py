@@ -8,12 +8,18 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from bot.config import Config
+from bot.repositories.analysis_repository import AnalysisRepository
+from bot.repositories.api_usage_repository import ApiUsageRepository
+from bot.repositories.journal_repository import JournalRepository
 from bot.repositories.pending_prompt_repository import PendingPromptRepository
 from bot.repositories.practice_repository import PracticeRepository
 from bot.repositories.practice_send_repository import PracticeSendRepository
 from bot.repositories.user_repository import UserRepository
+from bot.services.analysis_service import AnalysisService
 from bot.services.delivery_service import DeliveryService
+from bot.services.llm_client import LlmClient
 from bot.services.practice_service import PracticeService
+from bot.services.usage_service import UsageService
 
 logger = logging.getLogger(__name__)
 
@@ -35,12 +41,77 @@ def _slot_key(local_now: datetime) -> str:
 async def run_morning_analysis(bot, session_factory: async_sessionmaker, config: Config) -> None:  # type: ignore[type-arg]
     """Run the morning AI analysis of yesterday's journal entries (AC-11).
 
-    This is a no-op stub until the AI analysis service is implemented.
-    It is intentionally dispatched as a separate one-shot APScheduler job
-    (never awaited inline in tick) so that slow LLM calls cannot block the
-    60-second practice-delivery tick.
+    Dispatched as a separate one-shot APScheduler job (never awaited inline in
+    tick) so that slow LLM calls cannot block the 60-second practice-delivery
+    tick.  Idempotent per (user_id, analysis_date) — safe to re-dispatch.
     """
-    logger.info("run_morning_analysis: stub — AI analysis service not yet implemented")
+    logger.info("run_morning_analysis: starting")
+
+    async with session_factory() as session:
+        user_repo = UserRepository(session)
+        user = await user_repo.get_first()
+        if user is None:
+            logger.info("run_morning_analysis: no user found, skipping")
+            return
+
+        tz_string = user.timezone or "UTC"
+        try:
+            user_tz = ZoneInfo(tz_string)
+        except (ZoneInfoNotFoundError, KeyError):
+            logger.warning(
+                "run_morning_analysis: invalid timezone %r for user %s, skipping",
+                tz_string,
+                user.telegram_id,
+            )
+            return
+
+        # analysis_date is *yesterday* in the user's local timezone
+        now_local = datetime.now(UTC).astimezone(user_tz)
+        from datetime import timedelta as _td
+
+        analysis_date = (now_local - _td(days=1)).date()
+        lang = user.language
+
+        journal_repo = JournalRepository(session)
+        analysis_repo = AnalysisRepository(session)
+        api_usage_repo = ApiUsageRepository(session)
+        llm_client = LlmClient(config)
+        usage_service = UsageService(config, api_usage_repo)
+
+        analysis_service = AnalysisService(
+            session=session,
+            config=config,
+            journal_repo=journal_repo,
+            analysis_repo=analysis_repo,
+            llm_client=llm_client,
+            usage_service=usage_service,
+        )
+
+        result = await analysis_service.build(
+            user_id=user.telegram_id,
+            analysis_date=analysis_date,
+            lang=lang,
+            user_tz_name=tz_string,
+        )
+
+        # Deliver the analysis message to the user via Telegram.
+        try:
+            await bot.send_message(user.telegram_id, result.message)
+            logger.info(
+                "run_morning_analysis: sent analysis to user %s "
+                "(date=%s, n_total=%d, n_leads=%d, fallback=%s)",
+                user.telegram_id,
+                analysis_date,
+                result.n_total,
+                result.n_leads,
+                result.used_fallback,
+            )
+        except Exception:
+            logger.error(
+                "run_morning_analysis: failed to send message to user %s",
+                user.telegram_id,
+                exc_info=True,
+            )
 
 
 async def tick(  # type: ignore[type-arg]
