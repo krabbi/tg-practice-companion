@@ -115,6 +115,15 @@
   active: true
   sort_order: 250
 
+- name: Afternoon motivational image
+  content_type: motivational_image
+  # No telegram_file_id here — the scheduler draws a random image from the
+  # motivational_images pool at runtime (repeats allowed, AC-17).
+  periodicity_type: fixed_times
+  schedule_times: ["15:00"]
+  active: true
+  sort_order: 260
+
 - name: Evening check-in
   content_type: question
   content: "Как прошёл твой день? Назови три вещи, за которые ты благодарна сегодня."

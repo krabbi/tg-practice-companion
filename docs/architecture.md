@@ -47,7 +47,7 @@ One row per schedulable practice. Cadence and content are data; code is the engi
 |---|---|---|---|---|
 | `id` | `UUID` | NO | `uuid4()` | Primary key |
 | `name` | `String(120)` | NO | — | Human-readable identifier; used for idempotent seed upsert |
-| `content_type` | `Enum(question, text, audio, image, want, good_deeds)` | NO | — | Determines delivery method |
+| `content_type` | `Enum(question, text, audio, image, want, good_deeds, motivational_image)` | NO | — | Determines delivery method |
 | `content` | `Text` | YES | — | Body for `question`/`text` practices |
 | `media_asset_id` | `UUID FK→media_assets` | YES | — | Set for `audio`/`image` practices |
 | `periodicity_type` | `Enum(every_n_hours, fixed_times)` | NO | — | Cadence type |
@@ -64,7 +64,7 @@ One row per schedulable practice. Cadence and content are data; code is the engi
 
 Index: `ix_practices_active(active)`
 
-Migrations: `alembic/versions/0002_practice_engine.py` (initial schema); `alembic/versions/0007_want_practice_type.py` (added `want` to the `content_type` enum); `alembic/versions/0008_good_deeds_practice_type.py` (added `good_deeds`).
+Migrations: `alembic/versions/0002_practice_engine.py` (initial schema); `alembic/versions/0007_want_practice_type.py` (added `want` to the `content_type` enum); `alembic/versions/0008_good_deeds_practice_type.py` (added `good_deeds`); `alembic/versions/0009_motivational_image_practice_type.py` (added `motivational_image`).
 
 ---
 
@@ -360,6 +360,7 @@ The journal catch-all carries `StateFilter(None)` so it yields whenever an FSM s
   8. For each practice: compute `slot_key = "YYYY-MM-DDTHH:MM"` → apply backward-tz-jump guard → `practice_send_repository.try_claim(...)` (insert-or-skip on unique index) → if claimed, **first commit** (persists the claim), then branch on `content_type`:
      - `want`: call `WantListService.random_active(user_id)` — if an undone item exists, send it via `bot.send_message`; if the list is empty, the slot is claimed silently.
      - `good_deeds`: send the evening capture question via `bot.send_message`, write a `pending_prompt` row with `kind=good_deeds` (via flush), then **second commit** (persists the prompt).
+     - `motivational_image`: call `ImageRepository.random_active()` — if an active image exists, send it via `bot.send_photo`; if the pool is empty, the slot is claimed silently.
      - All other types: call `delivery_service.send(practice, user)` (writes `pending_prompt` for `question` practices via flush), then **second commit** (persists the `pending_prompt`).
 
 ### Send-window convention

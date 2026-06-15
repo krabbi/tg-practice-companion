@@ -14,6 +14,7 @@ from bot.models.practice import Practice
 from bot.repositories.analysis_repository import AnalysisRepository
 from bot.repositories.api_usage_repository import ApiUsageRepository
 from bot.repositories.blessing_repository import BlessingRepository
+from bot.repositories.image_repository import ImageRepository
 from bot.repositories.journal_repository import JournalRepository
 from bot.repositories.pending_prompt_repository import PendingPromptRepository
 from bot.repositories.practice_repository import PracticeRepository
@@ -160,6 +161,7 @@ async def tick(  # type: ignore[type-arg]
         delivery_service = DeliveryService(bot, prompt_repo=prompt_repo)
 
         want_list_svc = WantListService(session, WantListRepository(session))
+        image_repo = ImageRepository(session)
 
         user = await user_repo.get_first()
         if user is None:
@@ -335,6 +337,37 @@ async def tick(  # type: ignore[type-arg]
                         slot,
                         exc_info=True,
                     )
+            elif practice_content_type == "motivational_image":
+                image = await image_repo.random_active()
+                if image is None:
+                    logger.info(
+                        "tick: no active motivational images for user %s, slot %s claimed silently",
+                        user.telegram_id,
+                        slot,
+                    )
+                else:
+                    file_id = image.media_asset.telegram_file_id if image.media_asset else None
+                    if file_id is None:
+                        logger.error(
+                            "tick: motivational image %s has no telegram_file_id, skipping",
+                            image.id,
+                        )
+                    else:
+                        try:
+                            await bot.send_photo(chat_id=user.telegram_id, photo=file_id)
+                            logger.info(
+                                "tick: sent afternoon motivational image to user %s at slot %s",
+                                user.telegram_id,
+                                slot,
+                            )
+                        except Exception:
+                            logger.error(
+                                "tick: failed to send afternoon motivational image to user %s "
+                                "at slot %s",
+                                user.telegram_id,
+                                slot,
+                                exc_info=True,
+                            )
             else:
                 try:
                     await delivery_service.send(practice, user.telegram_id)
