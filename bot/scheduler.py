@@ -2,12 +2,14 @@
 
 import logging
 from datetime import UTC, datetime, timedelta
+from html import escape
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from bot.config import Config
+from bot.i18n import t
 from bot.models.practice import Practice
 from bot.repositories.analysis_repository import AnalysisRepository
 from bot.repositories.api_usage_repository import ApiUsageRepository
@@ -17,12 +19,14 @@ from bot.repositories.pending_prompt_repository import PendingPromptRepository
 from bot.repositories.practice_repository import PracticeRepository
 from bot.repositories.practice_send_repository import PracticeSendRepository
 from bot.repositories.user_repository import UserRepository
+from bot.repositories.want_list_repository import WantListRepository
 from bot.services.analysis_service import AnalysisService
 from bot.services.blessing_service import BlessingService
 from bot.services.delivery_service import DeliveryService
 from bot.services.llm_client import LlmClient
 from bot.services.practice_service import PracticeService
 from bot.services.usage_service import UsageService
+from bot.services.want_list_service import WantListService
 
 logger = logging.getLogger(__name__)
 
@@ -155,6 +159,8 @@ async def tick(  # type: ignore[type-arg]
         practice_service = PracticeService(practice_repo)
         delivery_service = DeliveryService(bot, prompt_repo=prompt_repo)
 
+        want_list_svc = WantListService(session, WantListRepository(session))
+
         user = await user_repo.get_first()
         if user is None:
             logger.debug("tick: no user found, skipping")
@@ -244,6 +250,7 @@ async def tick(  # type: ignore[type-arg]
             # is expired; reading attributes after that would trigger a lazy-load.
             practice_id = practice.id
             practice_name = practice.name
+            practice_content_type = practice.content_type
 
             # Backward-tz-jump guard: refuse to claim a slot whose local wall-time
             # precedes the wall-time at the last timezone change.
@@ -279,27 +286,54 @@ async def tick(  # type: ignore[type-arg]
             # least avoid double-sending on the next tick (claimed row persists).
             await session.commit()
 
-            try:
-                await delivery_service.send(practice, user.telegram_id)
-                # Commit to persist the pending_prompt written by DeliveryService
-                # for question practices (flushed but not yet committed).
-                await session.commit()
-                logger.info(
-                    "tick: delivered practice %s (%r) to user %s at slot %s",
-                    practice_id,
-                    practice_name,
-                    user.telegram_id,
-                    slot,
-                )
-            except Exception:
-                logger.error(
-                    "tick: delivery failed for practice %s at slot %s",
-                    practice_id,
-                    slot,
-                    exc_info=True,
-                )
-                # Delivery failure is logged but does not un-claim the slot —
-                # a failed send is still counted so we don't spam on the next tick.
+            if practice_content_type == "want":
+                item = await want_list_svc.random_active(user.telegram_id)
+                if item is None:
+                    logger.info(
+                        "tick: no undone want items for user %s, slot %s claimed silently",
+                        user.telegram_id,
+                        slot,
+                    )
+                else:
+                    try:
+                        await bot.send_message(
+                            chat_id=user.telegram_id,
+                            text=t("want_daily_pick", user.language).format(text=escape(item.text)),
+                        )
+                        logger.info(
+                            "tick: sent want pick to user %s at slot %s",
+                            user.telegram_id,
+                            slot,
+                        )
+                    except Exception:
+                        logger.error(
+                            "tick: failed to send want pick to user %s at slot %s",
+                            user.telegram_id,
+                            slot,
+                            exc_info=True,
+                        )
+            else:
+                try:
+                    await delivery_service.send(practice, user.telegram_id)
+                    # Commit to persist the pending_prompt written by DeliveryService
+                    # for question practices (flushed but not yet committed).
+                    await session.commit()
+                    logger.info(
+                        "tick: delivered practice %s (%r) to user %s at slot %s",
+                        practice_id,
+                        practice_name,
+                        user.telegram_id,
+                        slot,
+                    )
+                except Exception:
+                    logger.error(
+                        "tick: delivery failed for practice %s at slot %s",
+                        practice_id,
+                        slot,
+                        exc_info=True,
+                    )
+                    # Delivery failure is logged but does not un-claim the slot —
+                    # a failed send is still counted so we don't spam on the next tick.
 
 
 async def housekeeping(session_factory: async_sessionmaker) -> None:  # type: ignore[type-arg]

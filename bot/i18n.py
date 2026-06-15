@@ -18,6 +18,11 @@ _RU: dict[str, str] = {
     "capture_failed": "Не удалось сохранить ответ. Попробуй ещё раз.",
     "want_added": "Добавлено в список желаний! ✨",
     "want_add_failed": "Не удалось добавить. Попробуй ещё раз.",
+    "want_no_text": "Напиши, что именно ты хочешь. Например: /want купить гитару",
+    "wants_empty": "Список желаний пока пуст. Добавь первый пункт: /want &lt;текст&gt;",
+    "wants_list_header": "Твои желания:",
+    "want_list_error": "Не удалось загрузить список. Попробуй ещё раз.",
+    "want_daily_pick": "💫 Из твоего списка желаний:\n{text}",
     # skip_day (AC-5)
     "skip_day_confirmed": "Хорошо, практики на сегодня ({date}) пропущены. Завтра продолжим!",
     "skip_day_button": "Пропустить сегодня",
@@ -54,6 +59,11 @@ _EN: dict[str, str] = {
     "capture_failed": "Could not save your reply. Please try again.",
     "want_added": "Added to your want list! ✨",
     "want_add_failed": "Could not add item. Please try again.",
+    "want_no_text": "Tell me what you want. For example: /want buy a guitar",
+    "wants_empty": "Your want list is empty. Add the first item: /want &lt;text&gt;",
+    "wants_list_header": "Your wants:",
+    "want_list_error": "Could not load the list. Please try again.",
+    "want_daily_pick": "💫 From your want list:\n{text}",
     # skip_day (AC-5)
     "skip_day_confirmed": "Done, practices for today ({date}) are skipped. See you tomorrow!",
     "skip_day_button": "Skip today",

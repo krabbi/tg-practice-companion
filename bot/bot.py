@@ -6,7 +6,7 @@ from aiogram.enums import ParseMode
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from bot.config import Config
-from bot.handlers import assessment, commands, journal, skip_day
+from bot.handlers import assessment, commands, journal, skip_day, want_list
 from bot.middlewares.auth import AuthMiddleware
 from bot.middlewares.dependency import DependencyMiddleware
 
@@ -46,6 +46,7 @@ def create_dispatcher(
     # 3. assessment callbacks + skip_day command/callback routers
     dp.include_router(assessment.create_router())
     dp.include_router(skip_day.create_router())
+    dp.include_router(want_list.create_router())
     # 4. journal F.text / F.voice catch-all LAST (StateFilter(None) yields to FSM)
     dp.include_router(journal.create_router())
 

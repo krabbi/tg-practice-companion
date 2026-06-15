@@ -90,6 +90,15 @@
 
 # --- Later in the day ---
 
+- name: Daily want pick
+  content_type: want
+  # No content field — the scheduler picks a random undone want-list item at runtime.
+  # Add items via /want <text>; view them via /wants.
+  periodicity_type: fixed_times
+  schedule_times: ["12:00"]
+  active: true
+  sort_order: 150
+
 - name: CBT midday check-in
   content_type: question
   content: "Как ты себя чувствуешь прямо сейчас? Что ты думаешь о своём дне?"
