@@ -107,6 +107,14 @@
   active: true
   sort_order: 200
 
+- name: Good deed reminder
+  content_type: text
+  content: "Напоминание: сделай сегодня одно доброе дело — для себя или для другого человека. 💛"
+  periodicity_type: fixed_times
+  schedule_times: ["15:00"]
+  active: true
+  sort_order: 250
+
 - name: Evening check-in
   content_type: question
   content: "Как прошёл твой день? Назови три вещи, за которые ты благодарна сегодня."
@@ -114,6 +122,14 @@
   schedule_times: ["18:00"]
   active: true
   sort_order: 300
+
+- name: Good deed capture
+  content_type: good_deeds
+  content: "Какое доброе дело ты сделала сегодня? Напиши мне — я сохраню это в твой дневник добрых дел. 🌟"
+  periodicity_type: fixed_times
+  schedule_times: ["19:00"]
+  active: true
+  sort_order: 350
 
 - name: Night hypnosis
   content_type: audio

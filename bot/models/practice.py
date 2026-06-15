@@ -57,7 +57,7 @@ class Practice(Base, UUIDMixin, TimestampMixin):
 
     name: Mapped[str] = mapped_column(String(120), nullable=False)
     content_type: Mapped[str] = mapped_column(
-        Enum("question", "text", "audio", "image", "want", name="practice_content_type"),
+        Enum("question", "text", "audio", "image", "want", "good_deeds", name="practice_content_type"),
         nullable=False,
     )
     # Body for question/text practices; null for audio/image

@@ -312,6 +312,29 @@ async def tick(  # type: ignore[type-arg]
                             slot,
                             exc_info=True,
                         )
+            elif practice_content_type == "good_deeds":
+                content = practice.content or ""
+                try:
+                    sent = await bot.send_message(chat_id=user.telegram_id, text=content)
+                    await prompt_repo.create(
+                        user_id=user.telegram_id,
+                        kind="good_deeds",
+                        practice_id=practice_id,
+                        telegram_message_id=sent.message_id,
+                    )
+                    await session.commit()
+                    logger.info(
+                        "tick: sent good_deed question to user %s at slot %s",
+                        user.telegram_id,
+                        slot,
+                    )
+                except Exception:
+                    logger.error(
+                        "tick: failed to send good_deed question to user %s at slot %s",
+                        user.telegram_id,
+                        slot,
+                        exc_info=True,
+                    )
             else:
                 try:
                     await delivery_service.send(practice, user.telegram_id)

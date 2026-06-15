@@ -43,6 +43,9 @@ _RU: dict[str, str] = {
         "Доброе утро! Ты молодец — каждый день ты делаешь шаги вперёд. "
         "Продолжай практиковать — у тебя всё получится!"
     ),
+    # good deeds (AC-10)
+    "good_deed_saved": "Записала! Каждое доброе дело делает мир чуточку лучше. 🌟",
+    "good_deed_save_failed": "Не удалось сохранить. Попробуй ещё раз.",
 }
 
 # English strings — complete canonical set; used when lang == "en" or as fallback.
@@ -84,6 +87,9 @@ _EN: dict[str, str] = {
         "Good morning! You're doing great — every day you take steps forward. "
         "Keep practising — you can do it!"
     ),
+    # good deeds (AC-10)
+    "good_deed_saved": "Saved! Every good deed makes the world a little better. 🌟",
+    "good_deed_save_failed": "Could not save. Please try again.",
 }
 
 _STRINGS: dict[str, dict[str, str]] = {"ru": _RU, "en": _EN}
