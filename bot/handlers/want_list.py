@@ -1,6 +1,7 @@
 """Handlers for /want and /wants commands (AC-9)."""
 
 import logging
+from html import escape
 
 from aiogram import Router
 from aiogram.filters import Command
@@ -54,7 +55,7 @@ def create_router() -> Router:
                 return
             lines = [t("wants_list_header", lang)]
             for i, item in enumerate(items, 1):
-                lines.append(f"{i}. {item.text}")
+                lines.append(f"{i}. {escape(item.text)}")
             await message.answer("\n".join(lines))
         except Exception:
             logger.exception("cmd_wants: failed to list items for user %s", message.from_user.id)

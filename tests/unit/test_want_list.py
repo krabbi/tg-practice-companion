@@ -310,7 +310,7 @@ async def test_cmd_wants_no_from_user_returns_early() -> None:
 
 
 @pytest.mark.asyncio
-async def test_tick_sends_want_pick_when_practice_due(db_session: AsyncSession) -> None:
+async def test_tick_sends_want_pick_when_practice_due() -> None:
     """tick() sends a random undone want item when a 'want' practice is due.
 
     Asserts the core acceptance criterion: the scheduler dispatches the daily

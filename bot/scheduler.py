@@ -2,13 +2,14 @@
 
 import logging
 from datetime import UTC, datetime, timedelta
+from html import escape
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from bot.config import Config
-from bot.i18n import DEFAULT_LANGUAGE, t
+from bot.i18n import t
 from bot.models.practice import Practice
 from bot.repositories.analysis_repository import AnalysisRepository
 from bot.repositories.api_usage_repository import ApiUsageRepository
@@ -297,7 +298,7 @@ async def tick(  # type: ignore[type-arg]
                     try:
                         await bot.send_message(
                             chat_id=user.telegram_id,
-                            text=t("want_daily_pick", DEFAULT_LANGUAGE).format(text=item.text),
+                            text=t("want_daily_pick", user.language).format(text=escape(item.text)),
                         )
                         logger.info(
                             "tick: sent want pick to user %s at slot %s",
