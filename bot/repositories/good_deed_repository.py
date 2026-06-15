@@ -37,6 +37,19 @@ class GoodDeedRepository:
         )
         return list(result.scalars().all())
 
+    async def list_by_date_range(self, user_id: int, start: date, end: date) -> list[GoodDeed]:
+        """Return all good deeds for the given user within [start, end] inclusive, oldest first."""
+        result = await self._session.execute(
+            select(GoodDeed)
+            .where(
+                GoodDeed.user_id == user_id,
+                GoodDeed.deed_date >= start,
+                GoodDeed.deed_date <= end,
+            )
+            .order_by(GoodDeed.deed_date, GoodDeed.created_at)
+        )
+        return list(result.scalars().all())
+
     async def delete(self, deed_id: uuid.UUID) -> bool:
         """Delete the good deed by id; return True if deleted, False if not found."""
         deed = await self.get_by_id(deed_id)

@@ -21,6 +21,7 @@ from bot.services.delivery_service import DeliveryService
 from bot.services.good_deed_service import GoodDeedService
 from bot.services.journal_service import JournalService
 from bot.services.practice_service import PracticeService
+from bot.services.report_service import ReportService
 from bot.services.skip_day_service import SkipDayService
 from bot.services.timezone_service import TimezoneService
 from bot.services.transcription_service import TranscriptionService
@@ -70,6 +71,7 @@ class DependencyMiddleware(BaseMiddleware):
             data["good_deed_service"] = GoodDeedService(
                 session, good_deed_repo, user_repo, prompt_repo
             )
+            data["report_service"] = ReportService(session, journal_repo, good_deed_repo, send_repo)
 
             # Expose repos needed by handler filters
             data["prompt_repo"] = prompt_repo

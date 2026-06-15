@@ -293,14 +293,15 @@ catch-all journal router (M2) so that `/start` and `/help` are matched first.
 Router registration order is load-bearing (issue #4 Decision B1). Canonical order:
 
 1. `commands.router` — `/start`, `/help`
-2. *(slot reserved for `timezone_setup` FSM router — M5)*
+2. `timezone_setup.router` — FSM for `/timezone` picker (M5); must precede journal catch-all
 3. `assessment.router` — `assess:<id>:yes|no` callback queries
 4. `skip_day.router` — `/skip_day` command and `skip_day:confirm` callback
 5. `want_list.router` — `/want`, `/wants` commands (added M4.2)
-6. `good_deeds.router` — good-deed capture reply handler (added M4.3)
-7. `journal.router` — `F.text` / `F.voice` catch-all with `StateFilter(None)` (last)
+6. `reports.router` — `/report` command, period callbacks, custom-dates FSM (M5)
+7. `good_deeds.router` — good-deed capture reply handler (added M4.3)
+8. `journal.router` — `F.text` / `F.voice` catch-all with `StateFilter(None)` (last)
 
-The journal catch-all carries `StateFilter(None)` so it yields whenever an FSM state is active (e.g. first-run timezone setup in M5).
+The journal catch-all carries `StateFilter(None)` so it yields whenever an FSM state is active (e.g. `TimezoneSetupStates` or `ReportStates`).
 
 `DeliveryService` now accepts an optional `prompt_repo: PendingPromptRepository` parameter. When provided (the scheduler always provides it), every outgoing `question` practice writes a `pending_prompt` row capturing the Telegram `message_id`. The scheduler commits after successful delivery to persist the row.
 
@@ -323,6 +324,7 @@ The journal catch-all carries `StateFilter(None)` so it yields whenever an FSM s
 | `BlessingService` | `bot/services/blessing_service.py` | Select today's morning blessing by date-derived round-robin (`today.toordinal() % count`); idempotent for the same date (AC-3) |
 | `WantListService` | `bot/services/want_list_service.py` | Add want-list items (`add`), list active (undone) items (`list_active`), pick a random undone item (`random_active`) |
 | `GoodDeedService` | `bot/services/good_deed_service.py` | Insert a free-text `GoodDeed` row for the local calendar date; atomically consumes the associated `good_deeds` pending_prompt (AC-10) |
+| `ReportService` | `bot/services/report_service.py` | Aggregate journal stats, practice-send counts, and good deeds over a date range into a plain-text report (AC-12); no LLM |
 
 ### Repositories (M1 + M2 + M3)
 
@@ -330,16 +332,16 @@ The journal catch-all carries `StateFilter(None)` so it yields whenever an FSM s
 |---|---|---|
 | `UserRepository` | `bot/repositories/user_repository.py` | User CRUD; `get_first`, `get_by_telegram_id`, `save` |
 | `PracticeRepository` | `bot/repositories/practice_repository.py` | Practice + MediaAsset CRUD; `get_active_practices`, `get_by_name` |
-| `PracticeSendRepository` | `bot/repositories/practice_send_repository.py` | `try_claim` (insert-or-skip), `prune_older_than` |
+| `PracticeSendRepository` | `bot/repositories/practice_send_repository.py` | `try_claim` (insert-or-skip), `count_in_period(user_id, start, end)`, `prune_older_than` |
 | `PendingPromptRepository` | `bot/repositories/pending_prompt_repository.py` | `create`, `get_by_telegram_message_id`, `newest_unconsumed`, `mark_consumed`, `mark_clarify_sent` |
-| `JournalRepository` | `bot/repositories/journal_repository.py` | `create`, `get_by_id`, `daily_stats(user_id, date)` → `DailyStats(n_total, n_leads)` |
+| `JournalRepository` | `bot/repositories/journal_repository.py` | `create`, `get_by_id`, `daily_stats(user_id, date)` → `DailyStats(n_total, n_leads)`, `period_stats(user_id, start, end)` → `PeriodStats(n_total, n_leads)` |
 | `SelfAssessmentRepository` | `bot/repositories/self_assessment_repository.py` | `create`, `get_by_entry_id` |
 | `BlessingRepository` | `bot/repositories/blessing_repository.py` | `save`, `get_by_id`, `get_active_ordered` |
 | `ImageRepository` | `bot/repositories/image_repository.py` | `save`, `get_by_id`, `get_active` |
 | `AnalysisRepository` | `bot/repositories/analysis_repository.py` | `save`, `get_by_id`, `get_by_user_and_date` |
 | `ApiUsageRepository` | `bot/repositories/api_usage_repository.py` | `save`, `get_by_id`, `sum_cost_since` |
 | `WantListRepository` | `bot/repositories/want_list_repository.py` | `create` (insert item), `get_by_id`, `list_for_user` (all items for a user, oldest first), `mark_done`, `delete` |
-| `GoodDeedRepository` | `bot/repositories/good_deed_repository.py` | `create`, `get_by_id`, `list_by_date`, `delete` |
+| `GoodDeedRepository` | `bot/repositories/good_deed_repository.py` | `create`, `get_by_id`, `list_by_date`, `list_by_date_range`, `delete` |
 
 ## Scheduler (M1)
 

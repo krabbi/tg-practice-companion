@@ -11,7 +11,9 @@ _RU: dict[str, str] = {
     ),
     "help_text": (
         "Доступные команды:\n/start — начать работу\n/help — показать справку\n"
-        "/skip_day — пропустить практики на сегодня"
+        "/skip_day — пропустить практики на сегодня\n"
+        "/timezone — изменить часовой пояс\n"
+        "/report — отчёт за период"
     ),
     "access_denied": "Доступ запрещён.",
     "voice_not_configured": "Распознавание голоса недоступно (ключ Groq не настроен).",
@@ -46,6 +48,32 @@ _RU: dict[str, str] = {
     # good deeds (AC-10)
     "good_deed_saved": "Записала! Каждое доброе дело делает мир чуточку лучше. 🌟",
     "good_deed_save_failed": "Не удалось сохранить. Попробуй ещё раз.",
+    # timezone picker (AC-18, M5)
+    "tz_pick_continent": "Выбери континент:",
+    "tz_pick_country": "Выбери страну:",
+    "tz_pick_city": "Выбери город / часовой пояс:",
+    "tz_set_ok": "Часовой пояс установлен: {tz}. Расписание обновится с ближайшей минуты.",
+    "tz_set_error": "Не удалось сохранить часовой пояс. Попробуй ещё раз.",
+    "tz_invalid": "Неверный часовой пояс. Начнём сначала — выбери континент:",
+    # period report (AC-12, M5)
+    "report_pick_period": "Выбери период отчёта:",
+    "report_btn_7d": "7 дней",
+    "report_btn_30d": "30 дней",
+    "report_btn_custom": "Свой период",
+    "report_custom_prompt": (
+        "Введи период в формате ГГГГ-ММ-ДД ГГГГ-ММ-ДД\n(начало и конец через пробел):"
+    ),
+    "report_custom_bad_format": (
+        "Неверный формат. Введи: ГГГГ-ММ-ДД ГГГГ-ММ-ДД\n(начало и конец через пробел):"
+    ),
+    "report_error": "Не удалось сформировать отчёт. Попробуй ещё раз.",
+    "report_header": "Отчёт за {start} — {end}",
+    "report_total_entries": "Записей в дневнике: {n}",
+    "report_leads_fraction": "Ведут к целям: {leads} из {total}",
+    "report_no_data": "За этот период записей нет.",
+    "report_good_deeds_header": "Добрые дела:",
+    "report_good_deeds_empty": "Добрых дел за период не записано.",
+    "report_practices_header": "Практики отправлены: {n}",
 }
 
 # English strings — complete canonical set; used when lang == "en" or as fallback.
@@ -55,7 +83,10 @@ _EN: dict[str, str] = {
         "Every day I'll send you exercises and support. 🌟"
     ),
     "help_text": (
-        "Available commands:\n/start — start\n/help — show help\n/skip_day — skip today's practices"
+        "Available commands:\n/start — start\n/help — show help\n"
+        "/skip_day — skip today's practices\n"
+        "/timezone — change timezone\n"
+        "/report — period report"
     ),
     "access_denied": "Access denied.",
     "voice_not_configured": "Voice recognition is unavailable (Groq API key not set).",
@@ -90,6 +121,32 @@ _EN: dict[str, str] = {
     # good deeds (AC-10)
     "good_deed_saved": "Saved! Every good deed makes the world a little better. 🌟",
     "good_deed_save_failed": "Could not save. Please try again.",
+    # timezone picker (AC-18, M5)
+    "tz_pick_continent": "Choose a continent:",
+    "tz_pick_country": "Choose a country:",
+    "tz_pick_city": "Choose a city / timezone:",
+    "tz_set_ok": "Timezone set: {tz}. Schedule updates from the next minute.",
+    "tz_set_error": "Could not save timezone. Please try again.",
+    "tz_invalid": "Invalid timezone. Let's start over — choose a continent:",
+    # period report (AC-12, M5)
+    "report_pick_period": "Choose report period:",
+    "report_btn_7d": "7 days",
+    "report_btn_30d": "30 days",
+    "report_btn_custom": "Custom period",
+    "report_custom_prompt": (
+        "Enter the period as YYYY-MM-DD YYYY-MM-DD\n(start and end separated by a space):"
+    ),
+    "report_custom_bad_format": (
+        "Invalid format. Enter: YYYY-MM-DD YYYY-MM-DD\n(start and end separated by a space):"
+    ),
+    "report_error": "Could not generate report. Please try again.",
+    "report_header": "Report for {start} — {end}",
+    "report_total_entries": "Journal entries: {n}",
+    "report_leads_fraction": "Leading to goals: {leads} of {total}",
+    "report_no_data": "No entries found for this period.",
+    "report_good_deeds_header": "Good deeds:",
+    "report_good_deeds_empty": "No good deeds recorded for this period.",
+    "report_practices_header": "Practices sent: {n}",
 }
 
 _STRINGS: dict[str, dict[str, str]] = {"ru": _RU, "en": _EN}
