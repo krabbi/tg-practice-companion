@@ -120,7 +120,7 @@ jobs:
             PAUSES=$(gh pr view "$PR_NUMBER" --json comments \
               --jq '[.comments[].body | select(contains("<!-- autobot:pause-count -->"))] | length' 2>/dev/null || echo 0)
             if [ "${PAUSES:-0}" -ge 3 ]; then
-              gh pr comment "$PR_NUMBER" --body "[AUTOBOT] Paused ${PAUSES}× on agent errors — not a transient subscription-limit hit anymore. Setting needs-human. <!-- autobot:pause-count -->"
+              gh pr comment "$PR_NUMBER" --body "[AUTOBOT] Paused ${PAUSES}× on agent errors — not a transient subscription-limit hit anymore. Setting needs-human."
               gh pr edit "$PR_NUMBER" --remove-label "autobot-paused" || true
               gh pr edit "$PR_NUMBER" --add-label "needs-human"
             else
