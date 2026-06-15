@@ -2,6 +2,7 @@
 
 install:
 	pip install -e ".[dev]"
+	pre-commit install
 
 run:
 	python -m bot

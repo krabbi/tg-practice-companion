@@ -14,8 +14,10 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+      # Pinned to match .pre-commit-config.yaml and the dev extra (pyproject.toml)
+      # — keep all three in sync; ruff's format output is version-sensitive.
       - name: Install ruff
-        run: pip install ruff
+        run: pip install ruff==0.15.17
       - name: Lint
         run: ruff check .
       - name: Format check

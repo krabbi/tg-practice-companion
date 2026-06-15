@@ -28,7 +28,10 @@ dev = [
     "pytest-asyncio",
     "pytest-mock",
     "pytest-cov",
-    "ruff",
+    # Pinned to match CI (.github/workflows/ci.yml) and .pre-commit-config.yaml —
+    # keep all three in sync (formatting output is version-sensitive; a skew
+    # reintroduces the PR #58 "passes hook, fails CI format-check" failure mode).
+    "ruff==0.15.17",
     "pre-commit",
 ]
 

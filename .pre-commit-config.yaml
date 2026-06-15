@@ -1,7 +1,14 @@
+# Pinned to the SAME ruff version as CI (.github/workflows/ci.yml) and the dev
+# extra (pyproject.toml). Formatting output can differ between ruff releases, so
+# a version skew here would let a commit pass the hook yet fail CI's
+# `ruff format --check` (the PR #58 failure mode). Bump all three together.
 repos:
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.4.4
+    rev: v0.15.17
     hooks:
+      # Lint with autofix, then format. When either hook rewrites a file it
+      # aborts the commit (non-zero exit) leaving the fixes staged-pending — so
+      # an unformatted commit is impossible: re-run `git add -A && git commit`.
       - id: ruff
         args: [--fix]
       - id: ruff-format
