@@ -47,7 +47,7 @@ One row per schedulable practice. Cadence and content are data; code is the engi
 |---|---|---|---|---|
 | `id` | `UUID` | NO | `uuid4()` | Primary key |
 | `name` | `String(120)` | NO | — | Human-readable identifier; used for idempotent seed upsert |
-| `content_type` | `Enum(question, text, audio, image, want)` | NO | — | Determines delivery method |
+| `content_type` | `Enum(question, text, audio, image, want, good_deeds)` | NO | — | Determines delivery method |
 | `content` | `Text` | YES | — | Body for `question`/`text` practices |
 | `media_asset_id` | `UUID FK→media_assets` | YES | — | Set for `audio`/`image` practices |
 | `periodicity_type` | `Enum(every_n_hours, fixed_times)` | NO | — | Cadence type |
@@ -64,7 +64,7 @@ One row per schedulable practice. Cadence and content are data; code is the engi
 
 Index: `ix_practices_active(active)`
 
-Migrations: `alembic/versions/0002_practice_engine.py` (initial schema); `alembic/versions/0007_want_practice_type.py` (added `want` to the `content_type` enum).
+Migrations: `alembic/versions/0002_practice_engine.py` (initial schema); `alembic/versions/0007_want_practice_type.py` (added `want` to the `content_type` enum); `alembic/versions/0008_good_deeds_practice_type.py` (added `good_deeds`).
 
 ---
 
@@ -296,7 +296,9 @@ Router registration order is load-bearing (issue #4 Decision B1). Canonical orde
 2. *(slot reserved for `timezone_setup` FSM router — M5)*
 3. `assessment.router` — `assess:<id>:yes|no` callback queries
 4. `skip_day.router` — `/skip_day` command and `skip_day:confirm` callback
-5. `journal.router` — `F.text` / `F.voice` catch-all with `StateFilter(None)` (last)
+5. `want_list.router` — `/want`, `/wants` commands (added M4.2)
+6. `good_deeds.router` — good-deed capture reply handler (added M4.3)
+7. `journal.router` — `F.text` / `F.voice` catch-all with `StateFilter(None)` (last)
 
 The journal catch-all carries `StateFilter(None)` so it yields whenever an FSM state is active (e.g. first-run timezone setup in M5).
 
@@ -320,6 +322,7 @@ The journal catch-all carries `StateFilter(None)` so it yields whenever an FSM s
 | `AnalysisService` | `bot/services/analysis_service.py` | Build the once-daily morning AI analysis: query stats, enforce cost guardrail, call LLM with supportive AC-13 prompt, persist `DailyAiAnalysis` row (AC-11, AC-16) |
 | `BlessingService` | `bot/services/blessing_service.py` | Select today's morning blessing by date-derived round-robin (`today.toordinal() % count`); idempotent for the same date (AC-3) |
 | `WantListService` | `bot/services/want_list_service.py` | Add want-list items (`add`), list active (undone) items (`list_active`), pick a random undone item (`random_active`) |
+| `GoodDeedService` | `bot/services/good_deed_service.py` | Insert a free-text `GoodDeed` row for the local calendar date; atomically consumes the associated `good_deeds` pending_prompt (AC-10) |
 
 ### Repositories (M1 + M2 + M3)
 
@@ -336,6 +339,7 @@ The journal catch-all carries `StateFilter(None)` so it yields whenever an FSM s
 | `AnalysisRepository` | `bot/repositories/analysis_repository.py` | `save`, `get_by_id`, `get_by_user_and_date` |
 | `ApiUsageRepository` | `bot/repositories/api_usage_repository.py` | `save`, `get_by_id`, `sum_cost_since` |
 | `WantListRepository` | `bot/repositories/want_list_repository.py` | `create` (insert item), `get_by_id`, `list_for_user` (all items for a user, oldest first), `mark_done`, `delete` |
+| `GoodDeedRepository` | `bot/repositories/good_deed_repository.py` | `create`, `get_by_id`, `list_by_date`, `delete` |
 
 ## Scheduler (M1)
 
@@ -353,7 +357,10 @@ The journal catch-all carries `StateFilter(None)` so it yields whenever an FSM s
   5. If `local_now.hour == _MORNING_BLOCK_HOUR` and `minute == 0` and `user.last_blessing_date != today`: call `BlessingService.for_date(today)` → if a blessing is found, set `user.last_blessing_date = today`, **commit** (claim before send), then `bot.send_message(blessing.text)`.
   6. `practice_service.due_now(local_now)` → list of due practices.
   7. Sort due practices with `compose()` (ascending `sort_order`).
-  8. For each practice: compute `slot_key = "YYYY-MM-DDTHH:MM"` → apply backward-tz-jump guard → `practice_send_repository.try_claim(...)` (insert-or-skip on unique index) → if claimed, **first commit** (persists the claim), then branch on `content_type`: for `want`, call `WantListService.random_active(user_id)` — if an undone item exists, send it via `bot.send_message`; if the list is empty, the slot is claimed silently. For all other types, call `delivery_service.send(practice, user)` (writes `pending_prompt` for `question` practices via flush), then **second commit** (persists the `pending_prompt`).
+  8. For each practice: compute `slot_key = "YYYY-MM-DDTHH:MM"` → apply backward-tz-jump guard → `practice_send_repository.try_claim(...)` (insert-or-skip on unique index) → if claimed, **first commit** (persists the claim), then branch on `content_type`:
+     - `want`: call `WantListService.random_active(user_id)` — if an undone item exists, send it via `bot.send_message`; if the list is empty, the slot is claimed silently.
+     - `good_deeds`: send the evening capture question via `bot.send_message`, write a `pending_prompt` row with `kind=good_deeds` (via flush), then **second commit** (persists the prompt).
+     - All other types: call `delivery_service.send(practice, user)` (writes `pending_prompt` for `question` practices via flush), then **second commit** (persists the `pending_prompt`).
 
 ### Send-window convention
 

@@ -8,6 +8,7 @@ from aiogram.types import TelegramObject
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from bot.config import Config
+from bot.repositories.good_deed_repository import GoodDeedRepository
 from bot.repositories.journal_repository import JournalRepository
 from bot.repositories.pending_prompt_repository import PendingPromptRepository
 from bot.repositories.practice_repository import PracticeRepository
@@ -17,6 +18,7 @@ from bot.repositories.user_repository import UserRepository
 from bot.repositories.want_list_repository import WantListRepository
 from bot.services.assessment_service import AssessmentService
 from bot.services.delivery_service import DeliveryService
+from bot.services.good_deed_service import GoodDeedService
 from bot.services.journal_service import JournalService
 from bot.services.practice_service import PracticeService
 from bot.services.skip_day_service import SkipDayService
@@ -53,6 +55,7 @@ class DependencyMiddleware(BaseMiddleware):
             prompt_repo = PendingPromptRepository(session)
             assessment_repo = SelfAssessmentRepository(session)
             want_list_repo = WantListRepository(session)
+            good_deed_repo = GoodDeedRepository(session)
 
             # Services
             data["skip_day_service"] = SkipDayService(session, user_repo)
@@ -63,8 +66,13 @@ class DependencyMiddleware(BaseMiddleware):
             data["assessment_service"] = AssessmentService(
                 session, assessment_repo, journal_repo, prompt_repo
             )
-
             data["want_list_service"] = WantListService(session, want_list_repo)
+            data["good_deed_service"] = GoodDeedService(
+                session, good_deed_repo, user_repo, prompt_repo
+            )
+
+            # Expose repos needed by handler filters
+            data["prompt_repo"] = prompt_repo
 
             # Optional — injected as None when Groq credentials are missing
             if self._config.groq_api_key:
