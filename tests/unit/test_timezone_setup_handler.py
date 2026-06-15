@@ -14,10 +14,12 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from bot.handlers.timezone_setup import (
+    _AMERICA_CURATED,
     _CB_CITY,
     _CB_CONTINENT,
     _TZ_MAP,
     TimezoneSetupStates,
+    _city_keyboard,
     create_router,
 )
 from bot.i18n import DEFAULT_LANGUAGE, t
@@ -276,3 +278,34 @@ def test_tz_map_all_zones_have_continent_prefix() -> None:
     for continent, zones in _TZ_MAP.items():
         for tz in zones:
             assert tz.startswith(continent + "/"), f"{tz!r} does not start with {continent!r}/"
+
+
+# ---------------------------------------------------------------------------
+# Americas curated keyboard
+# ---------------------------------------------------------------------------
+
+
+def test_america_city_keyboard_uses_curated_subset() -> None:
+    """_city_keyboard('America') only includes the curated subset, not all ~169 zones."""
+    kb = _city_keyboard("America")
+    all_buttons = [btn for row in kb.inline_keyboard for btn in row]
+    # The full America list has ~169 entries; curated list is much smaller.
+    assert len(all_buttons) <= len(_AMERICA_CURATED)
+    # Spot-check that major cities are present.
+    callback_datas = {btn.callback_data for btn in all_buttons}
+    assert f"{_CB_CITY}America/New_York" in callback_datas
+    assert f"{_CB_CITY}America/Sao_Paulo" in callback_datas
+
+
+def test_america_curated_all_are_america_prefix() -> None:
+    """All curated America zones start with 'America/'."""
+    for tz in _AMERICA_CURATED:
+        assert tz.startswith("America/"), f"{tz!r} does not start with 'America/'"
+
+
+def test_non_america_city_keyboard_not_restricted() -> None:
+    """_city_keyboard for non-America continents uses the full zone list."""
+    kb = _city_keyboard("Europe")
+    all_buttons = [btn for row in kb.inline_keyboard for btn in row]
+    # Europe has many zones; the full list is used (at least as many as _TZ_MAP has).
+    assert len(all_buttons) == len(_TZ_MAP.get("Europe", []))

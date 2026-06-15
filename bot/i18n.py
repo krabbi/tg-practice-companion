@@ -50,7 +50,6 @@ _RU: dict[str, str] = {
     "good_deed_save_failed": "Не удалось сохранить. Попробуй ещё раз.",
     # timezone picker (AC-18, M5)
     "tz_pick_continent": "Выбери континент:",
-    "tz_pick_country": "Выбери страну:",
     "tz_pick_city": "Выбери город / часовой пояс:",
     "tz_set_ok": "Часовой пояс установлен: {tz}. Расписание обновится с ближайшей минуты.",
     "tz_set_error": "Не удалось сохранить часовой пояс. Попробуй ещё раз.",
@@ -123,7 +122,6 @@ _EN: dict[str, str] = {
     "good_deed_save_failed": "Could not save. Please try again.",
     # timezone picker (AC-18, M5)
     "tz_pick_continent": "Choose a continent:",
-    "tz_pick_country": "Choose a country:",
     "tz_pick_city": "Choose a city / timezone:",
     "tz_set_ok": "Timezone set: {tz}. Schedule updates from the next minute.",
     "tz_set_error": "Could not save timezone. Please try again.",

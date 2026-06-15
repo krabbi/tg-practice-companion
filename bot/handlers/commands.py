@@ -2,9 +2,15 @@
 
 from aiogram import Router
 from aiogram.filters import Command
+from aiogram.fsm.context import FSMContext
 from aiogram.types import Message
 
+from bot.handlers.timezone_setup import (
+    TimezoneSetupStates,
+    _continent_keyboard,
+)
 from bot.i18n import DEFAULT_LANGUAGE, t
+from bot.repositories.user_repository import UserRepository
 
 
 def create_router() -> Router:
@@ -17,9 +23,24 @@ def create_router() -> Router:
     router = Router(name="commands")
 
     @router.message(Command("start"))
-    async def cmd_start(message: Message) -> None:
-        """Greet the whitelisted user and confirm the bot is running."""
+    async def cmd_start(
+        message: Message,
+        state: FSMContext,
+        user_repo: UserRepository,
+    ) -> None:
+        """Greet the user; on first run (timezone unset) enter the timezone picker."""
+        if message.from_user is None:
+            return
         lang = DEFAULT_LANGUAGE
+        user = await user_repo.get_by_telegram_id(message.from_user.id)
+        if user is not None and user.timezone is None:
+            # First-run: redirect into the timezone picker before the welcome message.
+            await state.set_state(TimezoneSetupStates.selecting_continent)
+            await message.answer(
+                t("tz_pick_continent", lang),
+                reply_markup=_continent_keyboard(lang),
+            )
+            return
         await message.answer(t("start_welcome", lang))
 
     @router.message(Command("help"))

@@ -81,9 +81,43 @@ def _continent_keyboard(lang: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
+# Curated subset of Americas zones to keep the inline keyboard well within Telegram's
+# ~64 KB payload ceiling (the full America/* list has ~169 entries, which risks hitting it).
+# This covers the major population centres across North, Central, and South America.
+_AMERICA_CURATED: list[str] = [
+    "America/New_York",
+    "America/Chicago",
+    "America/Denver",
+    "America/Phoenix",
+    "America/Los_Angeles",
+    "America/Anchorage",
+    "America/Toronto",
+    "America/Vancouver",
+    "America/Winnipeg",
+    "America/Edmonton",
+    "America/Halifax",
+    "America/Mexico_City",
+    "America/Bogota",
+    "America/Lima",
+    "America/Caracas",
+    "America/Santiago",
+    "America/Sao_Paulo",
+    "America/Buenos_Aires",
+]
+
+
 def _city_keyboard(continent: str) -> InlineKeyboardMarkup:
-    """Return an inline keyboard listing all cities in the given continent."""
-    zones = _TZ_MAP.get(continent, [])
+    """Return an inline keyboard listing cities in the given continent.
+
+    For America, a curated subset is used instead of the full ~169-zone list
+    to stay within Telegram's ~64 KB inline keyboard payload ceiling.
+    """
+    if continent == "America":
+        # Only include curated zones that are actually present in the system's tz database.
+        available = set(_TZ_MAP.get("America", []))
+        zones = [tz for tz in _AMERICA_CURATED if tz in available]
+    else:
+        zones = _TZ_MAP.get(continent, [])
     buttons: list[InlineKeyboardButton] = []
     for tz in zones:
         # Display only the city/sub-region part for readability
