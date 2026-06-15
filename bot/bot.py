@@ -6,7 +6,16 @@ from aiogram.enums import ParseMode
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from bot.config import Config
-from bot.handlers import assessment, commands, good_deeds, journal, skip_day, want_list
+from bot.handlers import (
+    assessment,
+    commands,
+    good_deeds,
+    journal,
+    reports,
+    skip_day,
+    timezone_setup,
+    want_list,
+)
 from bot.middlewares.auth import AuthMiddleware
 from bot.middlewares.dependency import DependencyMiddleware
 
@@ -42,14 +51,18 @@ def create_dispatcher(
     # Register routers in canonical order (order is load-bearing — see issue #4).
     # 1. commands — /start, /help must match before the catch-all journal router
     dp.include_router(commands.create_router())
-    # 2. timezone_setup FSM router slot (reserved for M5 — not yet wired)
+    # 2. timezone_setup FSM router — before journal catch-all so picker input is
+    #    never swallowed by journal capture (StateFilter(None) on journal yields here)
+    dp.include_router(timezone_setup.create_router())
     # 3. assessment callbacks + skip_day command/callback routers
     dp.include_router(assessment.create_router())
     dp.include_router(skip_day.create_router())
     dp.include_router(want_list.create_router())
-    # good_deeds router runs before journal so its filter can intercept good_deeds prompts
+    # 4. reports router — /report command + period callback queries + custom-dates FSM
+    dp.include_router(reports.create_router())
+    # 5. good_deeds router runs before journal so its filter can intercept good_deeds prompts
     dp.include_router(good_deeds.create_router())
-    # 4. journal F.text / F.voice catch-all LAST (StateFilter(None) yields to FSM)
+    # 6. journal F.text / F.voice catch-all LAST (StateFilter(None) yields to FSM)
     dp.include_router(journal.create_router())
 
     return dp

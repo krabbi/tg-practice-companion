@@ -11,6 +11,14 @@ from bot.models.journal import JournalEntry, SelfAssessment
 
 
 @dataclass(frozen=True)
+class PeriodStats:
+    """Aggregated counts for a date range of journal entries."""
+
+    n_total: int
+    n_leads: int
+
+
+@dataclass(frozen=True)
 class DailyStats:
     """Count of yesterday's journal entries and those marked as leading to goals."""
 
@@ -80,3 +88,31 @@ class JournalRepository:
         n_leads: int = leads_result.scalar_one() or 0
 
         return DailyStats(n_total=n_total, n_leads=n_leads)
+
+    async def period_stats(self, user_id: int, start: date, end: date) -> PeriodStats:
+        """Return n_total and n_leads for journal entries within [start, end] inclusive.
+
+        Both start and end are inclusive date boundaries.
+        """
+        total_result = await self._session.execute(
+            select(func.count(JournalEntry.id)).where(
+                JournalEntry.user_id == user_id,
+                func.date(JournalEntry.created_at) >= start,
+                func.date(JournalEntry.created_at) <= end,
+            )
+        )
+        n_total: int = total_result.scalar_one() or 0
+
+        leads_result = await self._session.execute(
+            select(func.count(JournalEntry.id))
+            .join(SelfAssessment, SelfAssessment.journal_entry_id == JournalEntry.id)
+            .where(
+                JournalEntry.user_id == user_id,
+                func.date(JournalEntry.created_at) >= start,
+                func.date(JournalEntry.created_at) <= end,
+                SelfAssessment.leads_to_goals.is_(True),
+            )
+        )
+        n_leads: int = leads_result.scalar_one() or 0
+
+        return PeriodStats(n_total=n_total, n_leads=n_leads)

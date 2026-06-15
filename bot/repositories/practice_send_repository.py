@@ -1,9 +1,9 @@
 """Repository for PracticeSend dedup ledger."""
 
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -68,6 +68,24 @@ class PracticeSendRepository:
             )
         )
         return result.scalar_one_or_none() is not None
+
+    async def count_in_period(self, user_id: int, start: date, end: date) -> int:
+        """Return the number of practice_sends for user_id with slot_key in [start, end].
+
+        slot_key is a "YYYY-MM-DDTHH:MM" string so comparing the date portion is done
+        by extracting the first 10 characters.  Both start and end are inclusive.
+        """
+        start_str = start.isoformat()  # "YYYY-MM-DD"
+        end_str = end.isoformat()  # "YYYY-MM-DD"
+        result = await self._session.execute(
+            select(func.count(PracticeSend.id)).where(
+                PracticeSend.user_id == user_id,
+                # slot_key starts with the date portion "YYYY-MM-DD"
+                PracticeSend.slot_key >= start_str,
+                PracticeSend.slot_key <= end_str + "T99:99",
+            )
+        )
+        return result.scalar_one() or 0
 
     async def prune_older_than(self, cutoff: datetime) -> int:
         """Delete all PracticeSend rows whose sent_at is before cutoff.
