@@ -66,7 +66,7 @@ def _build_tz_map() -> dict[str, list[str]]:
 _TZ_MAP: dict[str, list[str]] = _build_tz_map()
 
 
-def _continent_keyboard(lang: str) -> InlineKeyboardMarkup:
+def continent_keyboard(lang: str) -> InlineKeyboardMarkup:
     """Return an inline keyboard with one button per continent."""
     buttons: list[InlineKeyboardButton] = []
     for key, label in _CONTINENT_LABELS.items():
@@ -152,7 +152,7 @@ def create_router() -> Router:
         await state.set_state(TimezoneSetupStates.selecting_continent)
         await message.answer(
             t("tz_pick_continent", lang),
-            reply_markup=_continent_keyboard(lang),
+            reply_markup=continent_keyboard(lang),
         )
 
     @router.callback_query(
@@ -171,7 +171,7 @@ def create_router() -> Router:
             await state.set_state(TimezoneSetupStates.selecting_continent)
             await callback.message.edit_text(
                 t("tz_invalid", lang),
-                reply_markup=_continent_keyboard(lang),
+                reply_markup=continent_keyboard(lang),
             )
             return
         await state.update_data(continent=continent)
@@ -205,10 +205,10 @@ def create_router() -> Router:
                 tz_string,
                 callback.from_user.id,
             )
-            # Return to continent selection on error
             await state.set_state(TimezoneSetupStates.selecting_continent)
             await callback.message.edit_text(
                 t("tz_set_error", lang),
+                reply_markup=continent_keyboard(lang),
             )
             return
         except Exception:
@@ -218,7 +218,10 @@ def create_router() -> Router:
                 callback.from_user.id,
             )
             await state.set_state(TimezoneSetupStates.selecting_continent)
-            await callback.message.edit_text(t("tz_set_error", lang))
+            await callback.message.edit_text(
+                t("tz_set_error", lang),
+                reply_markup=continent_keyboard(lang),
+            )
             return
 
         await state.clear()

@@ -7,7 +7,7 @@ from aiogram.types import Message
 
 from bot.handlers.timezone_setup import (
     TimezoneSetupStates,
-    _continent_keyboard,
+    continent_keyboard,
 )
 from bot.i18n import DEFAULT_LANGUAGE, t
 from bot.repositories.user_repository import UserRepository
@@ -38,7 +38,7 @@ def create_router() -> Router:
             await state.set_state(TimezoneSetupStates.selecting_continent)
             await message.answer(
                 t("tz_pick_continent", lang),
-                reply_markup=_continent_keyboard(lang),
+                reply_markup=continent_keyboard(lang),
             )
             return
         await message.answer(t("start_welcome", lang))

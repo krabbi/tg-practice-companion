@@ -20,6 +20,7 @@ from bot.handlers.timezone_setup import (
     _TZ_MAP,
     TimezoneSetupStates,
     _city_keyboard,
+    continent_keyboard,
     create_router,
 )
 from bot.i18n import DEFAULT_LANGUAGE, t
@@ -219,7 +220,7 @@ async def test_cb_city_selected_persists_timezone() -> None:
 
 @pytest.mark.asyncio
 async def test_cb_city_selected_service_error_replies_error() -> None:
-    """When set_timezone raises, the handler replies with tz_set_error."""
+    """When set_timezone raises TimezoneError, handler shows error and re-attaches continent keyboard."""
     from bot.exceptions import TimezoneError
 
     router = create_router()
@@ -236,7 +237,33 @@ async def test_cb_city_selected_service_error_replies_error() -> None:
         await handler(cb, state=state, timezone_service=svc)
 
     state.clear.assert_not_awaited()
-    cb.message.edit_text.assert_awaited_once_with(t("tz_set_error", DEFAULT_LANGUAGE))
+    cb.message.edit_text.assert_awaited_once_with(
+        t("tz_set_error", DEFAULT_LANGUAGE),
+        reply_markup=continent_keyboard(DEFAULT_LANGUAGE),
+    )
+
+
+@pytest.mark.asyncio
+async def test_cb_city_selected_unexpected_error_replies_error() -> None:
+    """When set_timezone raises an unexpected Exception, handler shows error and re-attaches continent keyboard."""
+    router = create_router()
+    handler = _get_handler(router, "callback_query", "cb_city_selected")
+    assert handler is not None
+
+    tz = "Europe/Berlin"
+    cb = make_callback(user_id=111, data=f"{_CB_CITY}{tz}")
+    state = make_fsm_context()
+    svc = MagicMock(spec=TimezoneService)
+    svc.set_timezone = AsyncMock(side_effect=RuntimeError("db down"))
+
+    with patch("bot.handlers.timezone_setup.logger"):
+        await handler(cb, state=state, timezone_service=svc)
+
+    state.clear.assert_not_awaited()
+    cb.message.edit_text.assert_awaited_once_with(
+        t("tz_set_error", DEFAULT_LANGUAGE),
+        reply_markup=continent_keyboard(DEFAULT_LANGUAGE),
+    )
 
 
 @pytest.mark.asyncio

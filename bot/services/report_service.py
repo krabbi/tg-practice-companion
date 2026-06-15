@@ -8,8 +8,6 @@ No LLM is used in this flow — the report is purely data-driven.
 from dataclasses import dataclass
 from datetime import date
 
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from bot.i18n import t
 from bot.repositories.good_deed_repository import GoodDeedRepository
 from bot.repositories.journal_repository import JournalRepository
@@ -35,12 +33,10 @@ class ReportService:
 
     def __init__(
         self,
-        session: AsyncSession,
         journal_repo: JournalRepository,
         good_deed_repo: GoodDeedRepository,
         send_repo: PracticeSendRepository,
     ) -> None:
-        self._session = session
         self._journal_repo = journal_repo
         self._good_deed_repo = good_deed_repo
         self._send_repo = send_repo

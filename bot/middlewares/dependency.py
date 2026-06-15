@@ -71,7 +71,7 @@ class DependencyMiddleware(BaseMiddleware):
             data["good_deed_service"] = GoodDeedService(
                 session, good_deed_repo, user_repo, prompt_repo
             )
-            data["report_service"] = ReportService(session, journal_repo, good_deed_repo, send_repo)
+            data["report_service"] = ReportService(journal_repo, good_deed_repo, send_repo)
 
             # Expose repos needed by handler filters
             data["prompt_repo"] = prompt_repo

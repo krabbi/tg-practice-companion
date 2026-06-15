@@ -14,7 +14,6 @@ from datetime import date
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from bot.handlers.reports import (
     _CB_REPORT_7D,
@@ -137,7 +136,6 @@ def _get_handler(router, kind: str, name: str):
 @pytest.mark.asyncio
 async def test_report_service_no_data() -> None:
     """build() returns no-data message when all counts are zero."""
-    session = MagicMock(spec=AsyncSession)
     journal_repo = MagicMock(spec=JournalRepository)
     journal_repo.period_stats = AsyncMock(return_value=PeriodStats(n_total=0, n_leads=0))
     deed_repo = MagicMock(spec=GoodDeedRepository)
@@ -145,7 +143,7 @@ async def test_report_service_no_data() -> None:
     send_repo = MagicMock(spec=PracticeSendRepository)
     send_repo.count_in_period = AsyncMock(return_value=0)
 
-    svc = ReportService(session, journal_repo, deed_repo, send_repo)
+    svc = ReportService(journal_repo, deed_repo, send_repo)
     start = date(2026, 6, 1)
     end = date(2026, 6, 7)
 
@@ -162,7 +160,6 @@ async def test_report_service_no_data() -> None:
 @pytest.mark.asyncio
 async def test_report_service_with_journal_data() -> None:
     """build() includes correct journal counts and self-assessment fraction."""
-    session = MagicMock(spec=AsyncSession)
     journal_repo = MagicMock(spec=JournalRepository)
     journal_repo.period_stats = AsyncMock(return_value=PeriodStats(n_total=10, n_leads=6))
     deed_repo = MagicMock(spec=GoodDeedRepository)
@@ -170,7 +167,7 @@ async def test_report_service_with_journal_data() -> None:
     send_repo = MagicMock(spec=PracticeSendRepository)
     send_repo.count_in_period = AsyncMock(return_value=21)
 
-    svc = ReportService(session, journal_repo, deed_repo, send_repo)
+    svc = ReportService(journal_repo, deed_repo, send_repo)
     result = await svc.build(
         user_id=111,
         start=date(2026, 6, 1),
@@ -193,7 +190,6 @@ async def test_report_service_lists_good_deeds() -> None:
     deed.deed_date = date(2026, 6, 3)
     deed.text = "Помогла соседке"
 
-    session = MagicMock(spec=AsyncSession)
     journal_repo = MagicMock(spec=JournalRepository)
     journal_repo.period_stats = AsyncMock(return_value=PeriodStats(n_total=0, n_leads=0))
     deed_repo = MagicMock(spec=GoodDeedRepository)
@@ -201,7 +197,7 @@ async def test_report_service_lists_good_deeds() -> None:
     send_repo = MagicMock(spec=PracticeSendRepository)
     send_repo.count_in_period = AsyncMock(return_value=0)
 
-    svc = ReportService(session, journal_repo, deed_repo, send_repo)
+    svc = ReportService(journal_repo, deed_repo, send_repo)
     result = await svc.build(
         user_id=111,
         start=date(2026, 6, 1),
@@ -216,7 +212,6 @@ async def test_report_service_lists_good_deeds() -> None:
 @pytest.mark.asyncio
 async def test_report_service_no_image_or_chart_payload() -> None:
     """build() returns only a text string — no binary or media payload."""
-    session = MagicMock(spec=AsyncSession)
     journal_repo = MagicMock(spec=JournalRepository)
     journal_repo.period_stats = AsyncMock(return_value=PeriodStats(n_total=5, n_leads=3))
     deed_repo = MagicMock(spec=GoodDeedRepository)
@@ -224,7 +219,7 @@ async def test_report_service_no_image_or_chart_payload() -> None:
     send_repo = MagicMock(spec=PracticeSendRepository)
     send_repo.count_in_period = AsyncMock(return_value=10)
 
-    svc = ReportService(session, journal_repo, deed_repo, send_repo)
+    svc = ReportService(journal_repo, deed_repo, send_repo)
     result = await svc.build(
         user_id=111,
         start=date(2026, 6, 1),
@@ -240,7 +235,6 @@ async def test_report_service_no_image_or_chart_payload() -> None:
 @pytest.mark.asyncio
 async def test_report_service_queries_correct_date_range() -> None:
     """build() passes exactly the given start/end to both repos."""
-    session = MagicMock(spec=AsyncSession)
     journal_repo = MagicMock(spec=JournalRepository)
     journal_repo.period_stats = AsyncMock(return_value=PeriodStats(n_total=0, n_leads=0))
     deed_repo = MagicMock(spec=GoodDeedRepository)
@@ -248,7 +242,7 @@ async def test_report_service_queries_correct_date_range() -> None:
     send_repo = MagicMock(spec=PracticeSendRepository)
     send_repo.count_in_period = AsyncMock(return_value=0)
 
-    svc = ReportService(session, journal_repo, deed_repo, send_repo)
+    svc = ReportService(journal_repo, deed_repo, send_repo)
     start = date(2026, 5, 1)
     end = date(2026, 5, 31)
 
