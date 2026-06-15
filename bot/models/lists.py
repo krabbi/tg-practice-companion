@@ -15,7 +15,9 @@ class WantListItem(Base):
 
     __tablename__ = "want_list_items"
 
-    id: Mapped[uuid.UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    id: Mapped[uuid.UUID] = mapped_column(
+        PG_UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
     user_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
     text: Mapped[str] = mapped_column(Text, nullable=False)
     done: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
@@ -30,7 +32,9 @@ class GoodDeed(Base):
     __tablename__ = "good_deeds"
     __table_args__ = (Index("ix_good_deeds_user_id_deed_date", "user_id", "deed_date"),)
 
-    id: Mapped[uuid.UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    id: Mapped[uuid.UUID] = mapped_column(
+        PG_UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
     user_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
     text: Mapped[str] = mapped_column(Text, nullable=False)
     deed_date: Mapped[date] = mapped_column(Date, nullable=False)

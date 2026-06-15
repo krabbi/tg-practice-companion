@@ -24,9 +24,7 @@ class WantListRepository:
 
     async def get_by_id(self, item_id: uuid.UUID) -> WantListItem | None:
         """Return the WantListItem with the given id, or None."""
-        result = await self._session.execute(
-            select(WantListItem).where(WantListItem.id == item_id)
-        )
+        result = await self._session.execute(select(WantListItem).where(WantListItem.id == item_id))
         return result.scalar_one_or_none()
 
     async def list_for_user(self, user_id: int) -> list[WantListItem]:

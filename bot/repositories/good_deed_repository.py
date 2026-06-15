@@ -25,9 +25,7 @@ class GoodDeedRepository:
 
     async def get_by_id(self, deed_id: uuid.UUID) -> GoodDeed | None:
         """Return the GoodDeed with the given id, or None."""
-        result = await self._session.execute(
-            select(GoodDeed).where(GoodDeed.id == deed_id)
-        )
+        result = await self._session.execute(select(GoodDeed).where(GoodDeed.id == deed_id))
         return result.scalar_one_or_none()
 
     async def list_by_date(self, user_id: int, deed_date: date) -> list[GoodDeed]:
