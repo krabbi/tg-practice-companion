@@ -81,12 +81,30 @@ jobs:
             комментарием в issue и сними метку claude-in-progress.
 
             ГРАНИЦЫ РОЛИ — соблюдай строго:
-            - Твоя работа ЗАКАНЧИВАЕТСЯ на открытии PR. НЕ делай code review,
-              НЕ ставь аппрув, НЕ мержи PR (никаких `gh pr merge`), НЕ закрывай
-              PR или issue вручную. Ревью, продуктовую приёмку и мерж выполняют
-              отдельные staged-воркфлоу, запускаемые по меткам. Если ты смержишь
-              PR сам — ты в обход всех гейтов вкатишь в main непроверенный код
-              (branch protection на этом репозитории недоступна, ты — гейт).
+            - Ты — ТОЛЬКО разработчик (coder). Ты НЕ ревьюер и НЕ продакт-менеджер.
+              Твоя работа ЗАКАНЧИВАЕТСЯ на открытии PR. НЕ делай code review,
+              НЕ делай продуктовую приёмку, НЕ ставь аппрув, НЕ мержи PR (никаких
+              `gh pr merge`), НЕ закрывай PR или issue вручную. Ревью, продуктовую
+              приёмку и мерж выполняют отдельные staged-воркфлоу, запускаемые по
+              меткам. Если ты смержишь PR сам — ты в обход всех гейтов вкатишь в
+              main непроверенный код (branch protection на этом репозитории
+              недоступна, ты — гейт).
+            - ЗАПРЕЩЕНО изображать ревью. НЕ оценивай собственный код, НЕ пиши
+              комментариев вида «pr-reviewer APPROVED», «CHANGES REQUESTED»,
+              «PRODUCT APPROVED/REQUESTED», НЕ выставляй вердиктов и НЕ постируй
+              verdict-маркеров (`<!-- autobot:*-verdict:* -->`). Эти комментарии и
+              метки ставят ТОЛЬКО staged-воркфлоу ревью; если ты сам их напишешь,
+              ты подменишь собой гейт и собьёшь пайплайн. Любые «замечания к
+              качеству» по своему коду исправляй прямо в коде до открытия PR, а не
+              оформляй ревью-комментарием.
+            - НЕ комментируй PR (никаких `gh pr comment`). Единственный комментарий,
+              который ты оставляешь, — ОДИН комментарий в ISSUE (`gh issue comment`)
+              со ссылкой на открытый PR. Больше никаких комментариев нигде.
+            - НЕ читай `.claude/orchestration.md` — это описание мульти-агентного
+              пайплайна (ревью/приёмка/мерж), и оно НЕ нужно для реализации issue.
+              Твой контекст — `CLAUDE.md`, `.claude/coding-patterns.md`,
+              `.claude/testing-guide.md`, `docs/`. Знание чужого флоу тебе только
+              мешает и провоцирует выход за роль.
             - Локальный прогон тестов идёт по sqlite; финальный гейт — это CI на
               PR (реальный Postgres). НЕ объявляй задачу готовой по локальному
               прогону: дождись зелёного CI или хотя бы не утверждай, что «все
@@ -102,10 +120,16 @@ jobs:
           # subcommands that would let the agent merge/close past the staged
           # gates (see PR that introduced this; root cause: a single issue agent
           # self-merged a red PR, bypassing review + the CI merge gate).
+          # `gh pr comment` is also blocked: the agent's only allowed comment is
+          # ONE link in the issue (`gh issue comment`). Without this block a coder
+          # run masqueraded as the review pipeline by posting "pr-reviewer
+          # APPROVED" / "PRODUCT CHANGES REQUESTED" comments straight on the PR
+          # (PR #62, 2026-06-15) — confusing, and a self-review the staged
+          # workflows are supposed to own. `gh pr review` is already blocked.
           claude_args: |
             --max-turns 250
             --allowedTools "Bash,Edit,Write,Read,Glob,Grep,MultiEdit"
-            --disallowedTools "Bash(gh pr merge:*),Bash(gh pr close:*),Bash(gh issue close:*),Bash(gh pr review:*)"
+            --disallowedTools "Bash(gh pr merge:*),Bash(gh pr close:*),Bash(gh issue close:*),Bash(gh pr review:*),Bash(gh pr comment:*)"
 
       # Post-agent verification: find the PR opened for this issue.
       # conclusion:success on the action does NOT mean the agent succeeded —
@@ -176,8 +200,22 @@ jobs:
             # Push with the PAT, NOT the default GITHUB_TOKEN: pushes made with
             # GITHUB_TOKEN do not re-trigger CI (anti-recursion), which would leave
             # the PR's check-runs stuck on the old red commit.
-            git push "https://x-access-token:${AUTOMATION_TOKEN}@github.com/${{ github.repository }}.git" "HEAD:${BRANCH}"
-            echo "Pushed formatting backstop commit to ${BRANCH}."
+            #
+            # The push must NOT be allowed to fail the whole job. It did on PR #62
+            # (2026-06-15): the PAT push was rejected ("Invalid username or token")
+            # while the SAME token worked for gh API calls in this job, the step
+            # exited 128 under `bash -e`, and the tail "Route to code review" step
+            # was skipped — so needs-code-review was never set and the PR was
+            # stranded with no label while the issue stayed locked. The format
+            # backstop is best-effort: CI's `lint` job + the merge gate are the
+            # real formatting gate, so a failed backstop push must degrade to a
+            # warning and let routing to review proceed, not block the pipeline.
+            if git push "https://x-access-token:${AUTOMATION_TOKEN}@github.com/${{ github.repository }}.git" "HEAD:${BRANCH}"; then
+              echo "Pushed formatting backstop commit to ${BRANCH}."
+            else
+              echo "WARNING: formatting backstop push failed — continuing to review anyway."
+              gh pr comment "${PR_NUMBER}" --body "[AUTOBOT] ruff-format backstop push failed (check AUTOMATION_TOKEN validity for git push). Proceeding to code review regardless — CI \`lint\` and the merge gate remain the authoritative formatting gate. <!-- autobot:format-backstop-push-failed -->" || true
+            fi
           fi
 
       # Tail: set needs-code-review on the PR and remove claude-ready from the
