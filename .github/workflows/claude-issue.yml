@@ -49,6 +49,20 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+
+      # Install the pre-commit hook in THIS runner so the agent's own
+      # `git commit` calls auto-run ruff + ruff-format. The hook lives in
+      # .git/hooks/ (never committed), so without this step it protects nobody —
+      # which is exactly how PR #58 shipped an unformatted commit. install-hooks
+      # pre-builds the hook env so the agent's first commit can't stall/fail on a
+      # cold network mid-commit. This is the fast feedback loop; the post-agent
+      # "Enforce formatting" step below is the deterministic backstop.
+      - name: Install pre-commit hook for the agent
+        run: |
+          pip install pre-commit
+          pre-commit install
+          pre-commit install-hooks
+
       - uses: anthropics/claude-code-action@v1
         id: claude
         with:
@@ -57,7 +71,11 @@ jobs:
             Реши issue #${{ github.event.issue.number }} в этом репозитории.
             Порядок: поставь на issue метку claude-in-progress (gh issue edit),
             изучи требование, реализуй в новой ветке, прогони тесты/линт,
-            открой PR с "Closes #${{ github.event.issue.number }}" в описании,
+            перед коммитом обязательно прогони `make format` (ruff format).
+            В репозитории включён pre-commit хук: если коммит отклонён с
+            "files were modified by this hook" — хук уже переформатировал файлы,
+            просто сделай `git add -A` и закоммить снова.
+            Открой PR с "Closes #${{ github.event.issue.number }}" в описании,
             оставь в issue комментарий со ссылкой на PR.
             Если issue непонятен — не выдумывай: задай уточняющие вопросы
             комментарием в issue и сними метку claude-in-progress.
@@ -125,6 +143,42 @@ jobs:
           fi
           echo "PR found: ${PR_URL}"
           echo "PR_URL=${PR_URL}" >> "$GITHUB_ENV"
+
+      # Deterministic backstop: even if the agent bypassed the pre-commit hook
+      # (e.g. `git commit --no-verify`), the PR branch must not reach CI with a
+      # formatting failure (the PR #58 dance: red lint -> merge gate -> needs-human).
+      # We re-format the pushed branch and, only if something changed, push a fix.
+      # Scope is intentionally JUST `ruff format` (whitespace/layout — always safe
+      # to auto-apply); genuine `ruff check` lint errors are real defects left for
+      # CI + the merge gate to surface, not silently auto-fixed.
+      - name: Enforce formatting on PR branch
+        env:
+          GH_TOKEN: ${{ secrets.AUTOMATION_TOKEN }}
+          AUTOMATION_TOKEN: ${{ secrets.AUTOMATION_TOKEN }}
+        run: |
+          PR_NUMBER=$(echo "${PR_URL}" | grep -oE '[0-9]+$')
+          BRANCH=$(gh pr view "${PR_NUMBER}" --json headRefName --jq .headRefName)
+
+          git fetch origin "${BRANCH}"
+          git checkout -f -B "${BRANCH}" "origin/${BRANCH}"
+
+          pip install ruff==0.15.17 >/dev/null
+          ruff format .
+
+          if git diff --quiet; then
+            echo "Formatting already clean on ${BRANCH} — no backstop commit needed."
+          else
+            echo "Agent left unformatted files — applying ruff format backstop."
+            git config user.name "autobot"
+            git config user.email "autobot@users.noreply.github.com"
+            git add -A
+            git commit -m "style: autobot ruff format backstop"
+            # Push with the PAT, NOT the default GITHUB_TOKEN: pushes made with
+            # GITHUB_TOKEN do not re-trigger CI (anti-recursion), which would leave
+            # the PR's check-runs stuck on the old red commit.
+            git push "https://x-access-token:${AUTOMATION_TOKEN}@github.com/${{ github.repository }}.git" "HEAD:${BRANCH}"
+            echo "Pushed formatting backstop commit to ${BRANCH}."
+          fi
 
       # Tail: set needs-code-review on the PR and remove claude-ready from the
       # issue using the PAT so the label change re-triggers the review workflow.

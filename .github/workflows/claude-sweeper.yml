@@ -71,6 +71,17 @@ jobs:
           echo "issue_number=${ISSUE_NUMBER}" >> "$GITHUB_OUTPUT"
           echo "Target issue: ${ISSUE_NUMBER}"
 
+      # Install the pre-commit hook in THIS runner so the agent's own
+      # `git commit` auto-runs ruff + ruff-format (see claude-issue.yml for the
+      # full rationale). Fast feedback loop; the post-agent "Enforce formatting"
+      # step below is the deterministic backstop.
+      - name: Install pre-commit hook for the agent
+        if: steps.find-issue.outputs.issue_number != ''
+        run: |
+          pip install pre-commit
+          pre-commit install
+          pre-commit install-hooks
+
       - uses: anthropics/claude-code-action@v1
         id: claude
         if: steps.find-issue.outputs.issue_number != ''
@@ -84,7 +95,11 @@ jobs:
             этот issue заново.
             Если подходящих issue нет — заверши работу, ничего не делая.
             Если есть: поставь метку claude-in-progress, реши задачу в новой
-            ветке, прогони тесты/линт, открой PR с "Closes #N" в описании,
+            ветке, прогони тесты/линт, перед коммитом обязательно прогони
+            `make format` (ruff format). В репозитории включён pre-commit хук:
+            если коммит отклонён с "files were modified by this hook" — хук уже
+            переформатировал файлы, сделай `git add -A` и закоммить снова.
+            Открой PR с "Closes #N" в описании,
             оставь в issue комментарий со ссылкой на PR.
             Если issue непонятен — не выдумывай: задай уточняющие вопросы
             комментарием в issue и сними метку claude-in-progress.
@@ -143,6 +158,39 @@ jobs:
           echo "PR found: ${PR_URL}"
           echo "PR_URL=${PR_URL}" >> "$GITHUB_ENV"
           echo "PR_NUMBER=$(echo "${PR_URL}" | grep -oE '[0-9]+$')" >> "$GITHUB_ENV"
+
+      # Deterministic backstop: even if the agent bypassed the pre-commit hook
+      # (e.g. `git commit --no-verify`), re-format the pushed branch and push a
+      # fix only if something changed — so a formatting failure never reaches CI
+      # (the PR #58 dance). Scope is intentionally JUST `ruff format`; genuine
+      # `ruff check` errors are left for CI + the merge gate. See claude-issue.yml.
+      - name: Enforce formatting on PR branch
+        if: steps.find-issue.outputs.issue_number != ''
+        env:
+          GH_TOKEN: ${{ secrets.AUTOMATION_TOKEN }}
+          AUTOMATION_TOKEN: ${{ secrets.AUTOMATION_TOKEN }}
+        run: |
+          BRANCH=$(gh pr view "${PR_NUMBER}" --json headRefName --jq .headRefName)
+
+          git fetch origin "${BRANCH}"
+          git checkout -f -B "${BRANCH}" "origin/${BRANCH}"
+
+          pip install ruff==0.15.17 >/dev/null
+          ruff format .
+
+          if git diff --quiet; then
+            echo "Formatting already clean on ${BRANCH} — no backstop commit needed."
+          else
+            echo "Agent left unformatted files — applying ruff format backstop."
+            git config user.name "autobot"
+            git config user.email "autobot@users.noreply.github.com"
+            git add -A
+            git commit -m "style: autobot ruff format backstop"
+            # Push with the PAT, NOT the default GITHUB_TOKEN (the latter does not
+            # re-trigger CI, leaving check-runs stuck on the old red commit).
+            git push "https://x-access-token:${AUTOMATION_TOKEN}@github.com/${{ github.repository }}.git" "HEAD:${BRANCH}"
+            echo "Pushed formatting backstop commit to ${BRANCH}."
+          fi
 
       # Tail: set needs-code-review on the PR and remove claude-ready from the
       # issue using the PAT so the label change re-triggers the review workflow.
