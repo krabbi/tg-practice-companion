@@ -87,9 +87,46 @@ jobs:
             --max-turns 50
             --allowedTools "Bash,Edit,Write,Read,Glob,Grep,MultiEdit"
 
+      # Subscription-limit guard — see claude-pr-review.yml for the full rationale.
+      # On a cap-exhausted degenerate run, pause (autobot-paused) instead of
+      # falling through to the "no marker" needs-human branch; claude-pr-resume
+      # restarts the flow once the cap resets. Only runs when the agent ran.
+      - name: Pause on subscription-limit exhaustion
+        id: limitcheck
+        if: steps.roundcheck.outputs.capped == 'false'
+        env:
+          GH_TOKEN: ${{ secrets.AUTOMATION_TOKEN }}
+        run: |
+          PR_NUMBER="${{ github.event.pull_request.number }}"
+          FILE="${{ steps.claude.outputs.execution_file }}"
+          if [ -z "$FILE" ] || [ ! -f "$FILE" ]; then
+            FILE="${RUNNER_TEMP}/claude-execution-output.json"
+          fi
+          IS_ERROR=""; SUBTYPE=""
+          if [ -f "$FILE" ]; then
+            IS_ERROR=$(jq -rs 'flatten | map(select(.type=="result")) | last | .is_error // empty' "$FILE" 2>/dev/null || true)
+            SUBTYPE=$(jq -rs 'flatten | map(select(.type=="result")) | last | .subtype // empty' "$FILE" 2>/dev/null || true)
+          fi
+          echo "execution result: is_error=${IS_ERROR:-?} subtype=${SUBTYPE:-?}"
+          if [ "$IS_ERROR" = "true" ] && [ "$SUBTYPE" != "error_max_turns" ]; then
+            PAUSES=$(gh pr view "$PR_NUMBER" --json comments \
+              --jq '[.comments[].body | select(contains("<!-- autobot:pause-count -->"))] | length' 2>/dev/null || echo 0)
+            if [ "${PAUSES:-0}" -ge 3 ]; then
+              gh pr comment "$PR_NUMBER" --body "[AUTOBOT] Paused ${PAUSES}× on agent errors — not a transient subscription-limit hit anymore. Setting needs-human."
+              gh pr edit "$PR_NUMBER" --remove-label "autobot-paused" || true
+              gh pr edit "$PR_NUMBER" --add-label "needs-human"
+            else
+              gh pr comment "$PR_NUMBER" --body "[AUTOBOT] Agent returned is_error with no usable result (subtype=${SUBTYPE:-none}) — most likely the Claude subscription 5-hour limit is exhausted. Pausing; claude-pr-resume restarts the review flow once the limit resets. <!-- autobot:pause-count -->"
+              gh pr edit "$PR_NUMBER" --add-label "autobot-paused"
+            fi
+            echo "paused=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "paused=false" >> "$GITHUB_OUTPUT"
+          fi
+
       # Post-agent verification: a new commit must have been pushed.
       - name: Verify fix was pushed
-        if: steps.roundcheck.outputs.capped == 'false'
+        if: steps.roundcheck.outputs.capped == 'false' && steps.limitcheck.outputs.paused != 'true'
         env:
           GH_TOKEN: ${{ secrets.AUTOMATION_TOKEN }}
           PR_BRANCH: ${{ github.event.pull_request.head.ref }}
@@ -110,7 +147,7 @@ jobs:
 
       # Route back to code review using the PAT so the label fires the workflow.
       - name: Route back to code review
-        if: steps.roundcheck.outputs.capped == 'false'
+        if: steps.roundcheck.outputs.capped == 'false' && steps.limitcheck.outputs.paused != 'true'
         env:
           GH_TOKEN: ${{ secrets.AUTOMATION_TOKEN }}
         run: |
