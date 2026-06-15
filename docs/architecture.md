@@ -229,7 +229,39 @@ Migration: `alembic/versions/0004_morning_and_usage.py`
 
 ---
 
-_Further tables (`want_list_items`, `good_deeds`) added by M4–M6 milestones._
+### want_list_items
+
+Stores the user's want-list entries. Created by M4.1.
+
+| Column | Type | Nullable | Default | Notes |
+|--------|------|----------|---------|-------|
+| `id` | `UUID` | NO | `uuid4()` | PK |
+| `user_id` | `BigInteger` | NO | — | Telegram user id |
+| `text` | `Text` | NO | — | Item description |
+| `done` | `Boolean` | NO | `false` | Checked-off flag |
+| `created_at` | `DateTime(tz=True)` | NO | `now()` | Row creation timestamp |
+
+Migration: `alembic/versions/0006_lists.py`
+
+---
+
+### good_deeds
+
+Stores per-date good deed records. Created by M4.1.
+
+| Column | Type | Nullable | Default | Notes |
+|--------|------|----------|---------|-------|
+| `id` | `UUID` | NO | `uuid4()` | PK |
+| `user_id` | `BigInteger` | NO | — | Telegram user id |
+| `text` | `Text` | NO | — | Deed description |
+| `deed_date` | `Date` | NO | — | The date the deed was performed |
+| `created_at` | `DateTime(tz=True)` | NO | `now()` | Row creation timestamp |
+
+Index: `ix_good_deeds_user_id_deed_date(user_id, deed_date)` — supports per-user per-day queries.
+
+Migration: `alembic/versions/0006_lists.py`
+
+---
 
 ## Dependency injection
 
