@@ -335,7 +335,7 @@ The journal catch-all carries `StateFilter(None)` so it yields whenever an FSM s
 | `ImageRepository` | `bot/repositories/image_repository.py` | `save`, `get_by_id`, `get_active` |
 | `AnalysisRepository` | `bot/repositories/analysis_repository.py` | `save`, `get_by_id`, `get_by_user_and_date` |
 | `ApiUsageRepository` | `bot/repositories/api_usage_repository.py` | `save`, `get_by_id`, `sum_cost_since` |
-| `WantListRepository` | `bot/repositories/want_list_repository.py` | `add` (create item), `list_for_user` (all items for a user), `random_active` (random undone item) |
+| `WantListRepository` | `bot/repositories/want_list_repository.py` | `create` (insert item), `get_by_id`, `list_for_user` (all items for a user, oldest first), `mark_done`, `delete` |
 
 ## Scheduler (M1)
 
