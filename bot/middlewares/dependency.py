@@ -14,6 +14,7 @@ from bot.repositories.practice_repository import PracticeRepository
 from bot.repositories.practice_send_repository import PracticeSendRepository
 from bot.repositories.self_assessment_repository import SelfAssessmentRepository
 from bot.repositories.user_repository import UserRepository
+from bot.repositories.want_list_repository import WantListRepository
 from bot.services.assessment_service import AssessmentService
 from bot.services.delivery_service import DeliveryService
 from bot.services.journal_service import JournalService
@@ -21,6 +22,7 @@ from bot.services.practice_service import PracticeService
 from bot.services.skip_day_service import SkipDayService
 from bot.services.timezone_service import TimezoneService
 from bot.services.transcription_service import TranscriptionService
+from bot.services.want_list_service import WantListService
 
 
 class DependencyMiddleware(BaseMiddleware):
@@ -50,6 +52,7 @@ class DependencyMiddleware(BaseMiddleware):
             journal_repo = JournalRepository(session)
             prompt_repo = PendingPromptRepository(session)
             assessment_repo = SelfAssessmentRepository(session)
+            want_list_repo = WantListRepository(session)
 
             # Services
             data["skip_day_service"] = SkipDayService(session, user_repo)
@@ -60,6 +63,8 @@ class DependencyMiddleware(BaseMiddleware):
             data["assessment_service"] = AssessmentService(
                 session, assessment_repo, journal_repo, prompt_repo
             )
+
+            data["want_list_service"] = WantListService(session, want_list_repo)
 
             # Optional — injected as None when Groq credentials are missing
             if self._config.groq_api_key:
