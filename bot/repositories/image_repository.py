@@ -1,9 +1,11 @@
 """Repository for MotivationalImage records."""
 
+import random
 import uuid
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from bot.models.morning import MotivationalImage
 
@@ -34,3 +36,13 @@ class ImageRepository:
             select(MotivationalImage).where(MotivationalImage.active.is_(True))
         )
         return list(result.scalars().all())
+
+    async def random_active(self) -> MotivationalImage | None:
+        """Return a uniformly random active motivational image with its media_asset, or None."""
+        result = await self._session.execute(
+            select(MotivationalImage)
+            .where(MotivationalImage.active.is_(True))
+            .options(selectinload(MotivationalImage.media_asset))
+        )
+        images = list(result.scalars().all())
+        return random.choice(images) if images else None
