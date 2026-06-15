@@ -1,0 +1,59 @@
+name: Claude PR resume
+
+# Restarts PRs that a PR stage paused on subscription-limit exhaustion
+# (label: autobot-paused). We cannot reliably tell WHICH stage was interrupted
+# — the cap can hit mid-review (num_turns>1) and only the next stage detects it
+# — so we don't try to resume the exact phase. Instead we wipe the stage labels
+# and re-enter the pipeline from the TOP (needs-code-review). The pipeline is
+# idempotent: the reviewer reads the current diff, so restarting is always safe.
+#
+# Pure bash, no Claude agent → no need for the claude-worker concurrency group;
+# the review stage it triggers joins that group itself. Runs ~every 5h (matches
+# the subscription 5-hour window) plus manual dispatch.
+on:
+  schedule:
+    - cron: "0 */5 * * *"
+  workflow_dispatch:
+
+jobs:
+  resume:
+    # Serialise resume runs against each other only (schedule + manual overlap).
+    concurrency:
+      group: claude-pr-resume
+      cancel-in-progress: false
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      pull-requests: write
+      issues: write
+    steps:
+      - name: Restart paused PRs from the top of the review flow
+        env:
+          # PAT so the needs-code-review label change re-triggers claude-pr-review
+          # (the default GITHUB_TOKEN does not fire downstream label workflows).
+          GH_TOKEN: ${{ secrets.AUTOMATION_TOKEN }}
+        run: |
+          # Paused PRs that are NOT parked for a human (needs-human owns those).
+          PRS=$(gh pr list --label "autobot-paused" --state open --json number,labels \
+            --jq '.[] | select(.labels | map(.name) | contains(["needs-human"]) | not) | .number' \
+            2>/dev/null || true)
+          if [ -z "$PRS" ]; then
+            echo "No paused PRs to resume."
+            exit 0
+          fi
+          for PR in $PRS; do
+            echo "Resuming PR #${PR}"
+            # Clean slate: drop the pause flag and every stage label, then re-enter
+            # at the top. Removing labels emits only 'unlabeled' events (the stage
+            # workflows trigger on 'labeled'), so nothing fires until the final add.
+            gh pr edit "$PR" \
+              --remove-label "autobot-paused" \
+              --remove-label "code-approved" \
+              --remove-label "code-changes-requested" \
+              --remove-label "product-approved" \
+              --remove-label "product-changes-requested" \
+              --remove-label "needs-code-review" || true
+            gh pr comment "$PR" --body "[AUTOBOT] Resuming after subscription-limit pause — restarting the review flow from code review."
+            # The single 'labeled' event that re-enters the pipeline.
+            gh pr edit "$PR" --add-label "needs-code-review"
+          done
