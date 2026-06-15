@@ -16,9 +16,7 @@ logger = logging.getLogger(__name__)
 _PROMPT_EXPIRY_HOURS = 24
 
 
-async def _is_good_deeds_prompt(
-    message: Message, prompt_repo: PendingPromptRepository
-) -> bool:
+async def _is_good_deeds_prompt(message: Message, prompt_repo: PendingPromptRepository) -> bool:
     """Return True when the newest unconsumed prompt is of kind 'good_deeds'.
 
     Used as a router-level filter so that messages without a pending good_deeds
