@@ -33,18 +33,6 @@ jobs:
       pull-requests: write
       issues: write
     steps:
-      # TEMP DIAGNOSTIC (remove before merge) — prove gh subcommands resolve the
-      # repo via GH_REPO in this checkout-less job. claude-queued is known to be
-      # populated ([69,70,71]); a working run prints them, the old (no GH_REPO)
-      # code would die with "fatal: not a git repository".
-      - name: DIAG gh subcommand under GH_REPO
-        env:
-          GH_TOKEN: ${{ secrets.AUTOMATION_TOKEN }}
-          GH_REPO: ${{ github.repository }}
-        run: |
-          echo "gh pr list (no mask):"
-          gh issue list --label "claude-queued" --state open --json number --jq '[.[].number]'
-
       - name: Restart paused PRs from the top of the review flow
         env:
           # PAT so the needs-code-review label change re-triggers claude-pr-review
