@@ -73,7 +73,18 @@ jobs:
           READY_COUNT=$(count_issues_with_label "claude-ready")
           IN_PROGRESS_COUNT=$(count_issues_with_label "claude-in-progress")
 
-          # Open PRs carrying any active pipeline stage label.
+          # An issue/PR parked on a subscription-limit pause (autobot-paused) or for
+          # a human (needs-human) is STILL the one task in flight — pr-resume re-picks
+          # autobot-paused, and a human clears needs-human. If the guard ignores these
+          # states it sees "idle" and promotes a SECOND issue, breaking the
+          # one-at-a-time invariant. This is the root cause of the parallel #87/#88
+          # PRs (2026-06-16): #69 was promoted, hit the coder cap → autobot-paused,
+          # then this guard saw zero active work and promoted #70 on top of it.
+          PAUSED_ISSUE_COUNT=$(count_issues_with_label "autobot-paused")
+          HUMAN_ISSUE_COUNT=$(count_issues_with_label "needs-human")
+
+          # Open PRs that represent in-flight chain work: any active pipeline stage
+          # label, OR parked on autobot-paused / needs-human (still the one task).
           ACTIVE_PR_COUNT=$(gh api "repos/${REPO}/pulls?state=open&per_page=100" \
             --jq '[.[] | select(
               (.labels | map(.name) | (
@@ -81,13 +92,15 @@ jobs:
                 contains(["code-changes-requested"]) or
                 contains(["code-approved"]) or
                 contains(["product-changes-requested"]) or
-                contains(["product-approved"])
+                contains(["product-approved"]) or
+                contains(["autobot-paused"]) or
+                contains(["needs-human"])
               ))
             )] | length' 2>/dev/null || echo 0)
 
-          TOTAL_ACTIVE=$((READY_COUNT + IN_PROGRESS_COUNT + ACTIVE_PR_COUNT))
+          TOTAL_ACTIVE=$((READY_COUNT + IN_PROGRESS_COUNT + PAUSED_ISSUE_COUNT + HUMAN_ISSUE_COUNT + ACTIVE_PR_COUNT))
 
-          echo "Active chain work: ready=${READY_COUNT} in-progress=${IN_PROGRESS_COUNT} active-prs=${ACTIVE_PR_COUNT}"
+          echo "Active chain work: ready=${READY_COUNT} in-progress=${IN_PROGRESS_COUNT} paused-issues=${PAUSED_ISSUE_COUNT} needs-human-issues=${HUMAN_ISSUE_COUNT} active-prs=${ACTIVE_PR_COUNT}"
 
           if [ "$TOTAL_ACTIVE" -gt 0 ]; then
             echo "Chain work already active — not promoting any queued issue."

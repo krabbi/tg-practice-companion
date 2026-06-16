@@ -10,7 +10,14 @@ on:
 
 jobs:
   merge:
-    if: github.event.label.name == 'product-approved'
+    # Merge only on product-approved AND only if the PR is NOT parked for a human.
+    # `needs-human` is a hard stop: without this guard, re-adding product-approved
+    # on a needs-human PR would silently merge it past the stop flag. The labels in
+    # github.event.pull_request reflect the PR state at the moment the label event
+    # fired, so a PR that already carries needs-human is skipped here.
+    if: >-
+      github.event.label.name == 'product-approved' &&
+      !contains(github.event.pull_request.labels.*.name, 'needs-human')
     # Deterministic anti-race (see claude-pr-review.yml for the full rationale):
     # only the stage whose label matched joins the shared `claude-worker` group
     # (serialises real Claude agents — subscription-cap protection); every other
