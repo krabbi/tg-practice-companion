@@ -114,6 +114,24 @@ Part of #<parent issue number>. <One sentence why this subtask exists.>
 
 Use English for issue titles and bodies (see language policy in `CLAUDE.md`).
 
+**Blocker markers (autobot chain driver) — exact format required.** When an issue depends on
+another, the dependency MUST be declared on its **own line** in the body, exactly:
+```
+Blocked by #N
+```
+(or `Blocked by #N, #M` for several). The chain driver (`claude-chain-driver.yml`) parses these
+with the regex `blocked by #[0-9]+` — there must be a **single space** between `by` and `#`.
+
+- ❌ Do NOT style it: `**Blocked by:** #42` — the `:` / `**` break `by #`, the driver sees
+  **no blockers** and releases the issue out of order.
+- ❌ Do NOT put the marker on a line that holds other `#`-references (e.g. `Part of epic #65.`
+  or `Blocks: #99`) — the driver captures **every** `#N` on the line and treats them all as
+  blockers. Keep the marker on a dedicated line.
+- ✅ A standalone `Blocked by #67` line. Human-readable prose about dependencies may live
+  elsewhere in the body, but the machine-readable marker line must follow this format.
+
+See `docs/operations.md` → "Autobot chain driver" for the full chain-enrolment protocol.
+
 ## PR review — product acceptance
 
 After the **pr-reviewer** approves a PR, the product manager must also review it
