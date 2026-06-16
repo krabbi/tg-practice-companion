@@ -1,0 +1,124 @@
+"""REST API for media assets and motivational-image pool — Stage 2 web admin (B4)."""
+
+import uuid
+from datetime import datetime
+from pathlib import Path
+from typing import Literal
+
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
+from pydantic import BaseModel
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from bot.repositories.image_repository import ImageRepository
+from bot.repositories.media_asset_repository import MediaAssetRepository
+from bot.services.media_service import MediaAdminService, MediaAssetError
+from web.dependencies import get_current_user, get_db_session
+
+media_router = APIRouter(prefix="/api/media", tags=["media"])
+motivational_router = APIRouter(prefix="/api/motivational-images", tags=["motivational-images"])
+
+_MAX_UPLOAD_BYTES = 50 * 1024 * 1024  # 50 MB
+
+
+class MediaAssetResponse(BaseModel):
+    """MediaAsset representation returned by all media endpoints."""
+
+    id: uuid.UUID
+    kind: str
+    storage_path: str | None
+    telegram_file_id: str | None
+    mime: str | None
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class MotivationalImageCreate(BaseModel):
+    """Request body for POST /api/motivational-images."""
+
+    media_asset_id: uuid.UUID
+    active: bool = True
+
+
+class MotivationalImageResponse(BaseModel):
+    """MotivationalImage representation returned by POST /api/motivational-images."""
+
+    id: uuid.UUID
+    media_asset_id: uuid.UUID
+    active: bool
+
+    model_config = {"from_attributes": True}
+
+
+def _make_service(
+    request: Request,
+    session: AsyncSession = Depends(get_db_session),  # noqa: B008
+) -> MediaAdminService:
+    """Build MediaAdminService from request context."""
+    config = request.app.state.config
+    bot = getattr(request.app.state, "bot", None)
+    chat_id = config.allowed_user_ids[0] if config.allowed_user_ids else None
+    storage_dir = Path(config.media_storage_dir)
+    return MediaAdminService(
+        session,
+        MediaAssetRepository(session),
+        ImageRepository(session),
+        bot,
+        chat_id,
+        storage_dir,
+    )
+
+
+@media_router.post("", response_model=MediaAssetResponse, status_code=201)
+async def upload_media(
+    file: UploadFile = File(...),  # noqa: B008
+    kind: Literal["audio", "image"] = Form(...),  # noqa: B008
+    service: MediaAdminService = Depends(_make_service),  # noqa: B008
+    _: dict = Depends(get_current_user),  # noqa: B008
+) -> object:
+    """Upload an audio or image file; persist to disk and capture a Telegram file_id."""
+    data = await file.read()
+    if len(data) > _MAX_UPLOAD_BYTES:
+        raise HTTPException(status_code=413, detail="File too large (max 50 MB)")
+    filename = file.filename or f"upload.{kind}"
+    mime = file.content_type or ("audio/mpeg" if kind == "audio" else "image/jpeg")
+    try:
+        return await service.upload(data, filename, kind, mime)
+    except MediaAssetError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@media_router.get("", response_model=list[MediaAssetResponse])
+async def list_media(
+    kind: Literal["audio", "image"] | None = None,
+    service: MediaAdminService = Depends(_make_service),  # noqa: B008
+    _: dict = Depends(get_current_user),  # noqa: B008
+) -> list:
+    """List all media assets, optionally filtered by ?kind=audio|image."""
+    return await service.list_assets(kind)
+
+
+@media_router.delete("/{asset_id}", status_code=204)
+async def delete_media(
+    asset_id: uuid.UUID,
+    service: MediaAdminService = Depends(_make_service),  # noqa: B008
+    _: dict = Depends(get_current_user),  # noqa: B008
+) -> None:
+    """Delete a media asset and its file on disk."""
+    found = await service.delete_asset(asset_id)
+    if not found:
+        raise HTTPException(status_code=404, detail="Media asset not found")
+
+
+@motivational_router.post("", response_model=MotivationalImageResponse, status_code=201)
+async def create_motivational_image(
+    body: MotivationalImageCreate,
+    service: MediaAdminService = Depends(_make_service),  # noqa: B008
+    _: dict = Depends(get_current_user),  # noqa: B008
+) -> object:
+    """Add a MediaAsset to the motivational-image pool."""
+    try:
+        return await service.create_motivational_image(body.media_asset_id, body.active)
+    except MediaAssetError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc

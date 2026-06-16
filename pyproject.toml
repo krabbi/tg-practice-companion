@@ -19,6 +19,7 @@ dependencies = [
     "python-dotenv>=1.0",
     "pyyaml>=6.0",
     "fastapi>=0.111",
+    "python-multipart>=0.0.9",
     "uvicorn[standard]>=0.29",
     "pyjwt>=2.8",
 ]

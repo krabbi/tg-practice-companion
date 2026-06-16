@@ -73,6 +73,9 @@ services:
       ALLOWED_USER_IDS: ${ALLOWED_USER_IDS:?ALLOWED_USER_IDS is required}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:?ANTHROPIC_API_KEY is required}
       CORS_ORIGINS: ${CORS_ORIGINS:-}
+      MEDIA_STORAGE_DIR: ${MEDIA_STORAGE_DIR:-/data/media}
+    volumes:
+      - practice_media:/data/media
 
   watchtower:
     image: containrrr/watchtower
@@ -84,3 +87,4 @@ services:
 
 volumes:
   practice_pgdata:
+  practice_media:

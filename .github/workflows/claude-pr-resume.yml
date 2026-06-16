@@ -44,29 +44,36 @@ jobs:
           # no-op; same root cause as the chain-driver #80 regression).
           GH_REPO: ${{ github.repository }}
         run: |
+          # Resume AT MOST ONE paused unit per run to preserve the one-at-a-time
+          # invariant. Resuming EVERY paused PR/issue at once is what spawned the
+          # parallel #87/#88 PRs (2026-06-16): both #69 and #70 were autobot-paused,
+          # and a single resume run re-readied both within seconds. PRs take priority
+          # over issues (a paused PR is closer to done), and within each we pick the
+          # lowest number for deterministic, stable ordering.
+          #
           # Paused PRs that are NOT parked for a human (needs-human owns those).
-          PRS=$(gh pr list --label "autobot-paused" --state open --json number,labels \
-            --jq '.[] | select(.labels | map(.name) | contains(["needs-human"]) | not) | .number' \
+          PR=$(gh pr list --label "autobot-paused" --state open --json number,labels \
+            --jq 'map(select(.labels | map(.name) | contains(["needs-human"]) | not)) | sort_by(.number) | .[0].number // empty' \
             2>/dev/null || true)
-          if [ -z "$PRS" ]; then
+          if [ -z "$PR" ]; then
             echo "No paused PRs to resume."
           else
-            for PR in $PRS; do
-              echo "Resuming PR #${PR}"
-              # Clean slate: drop the pause flag and every stage label, then re-enter
-              # at the top. Removing labels emits only 'unlabeled' events (the stage
-              # workflows trigger on 'labeled'), so nothing fires until the final add.
-              gh pr edit "$PR" \
-                --remove-label "autobot-paused" \
-                --remove-label "code-approved" \
-                --remove-label "code-changes-requested" \
-                --remove-label "product-approved" \
-                --remove-label "product-changes-requested" \
-                --remove-label "needs-code-review" || true
-              gh pr comment "$PR" --body "[AUTOBOT] Resuming after subscription-limit pause — restarting the review flow from code review."
-              # The single 'labeled' event that re-enters the pipeline.
-              gh pr edit "$PR" --add-label "needs-code-review"
-            done
+            echo "Resuming PR #${PR} (one-at-a-time; any other paused PRs wait for the next tick)."
+            # Clean slate: drop the pause flag and every stage label, then re-enter
+            # at the top. Removing labels emits only 'unlabeled' events (the stage
+            # workflows trigger on 'labeled'), so nothing fires until the final add.
+            gh pr edit "$PR" \
+              --remove-label "autobot-paused" \
+              --remove-label "code-approved" \
+              --remove-label "code-changes-requested" \
+              --remove-label "product-approved" \
+              --remove-label "product-changes-requested" \
+              --remove-label "needs-code-review" || true
+            gh pr comment "$PR" --body "[AUTOBOT] Resuming after subscription-limit pause — restarting the review flow from code review."
+            # The single 'labeled' event that re-enters the pipeline.
+            gh pr edit "$PR" --add-label "needs-code-review"
+            # Signal the issue step to stand down: one unit already resumed this run.
+            echo "RESUMED_ONE=1" >> "$GITHUB_ENV"
           fi
 
       - name: Re-queue paused issues for the coder
@@ -76,24 +83,31 @@ jobs:
           # Pin the repo — no checkout in this job (see the step above).
           GH_REPO: ${{ github.repository }}
         run: |
+          # One-at-a-time: if the PR step already resumed a unit this run, leave the
+          # paused issues for the next tick. Otherwise resume exactly ONE issue (the
+          # lowest number). This is the second half of the parallel-#87/#88 fix.
+          if [ -n "${RESUMED_ONE:-}" ]; then
+            echo "A paused PR was already resumed this run — leaving paused issues for the next tick (one-at-a-time)."
+            exit 0
+          fi
+
           # Paused issues (coder-stage cap hit) that are NOT parked for a human.
-          ISSUES=$(gh issue list --label "autobot-paused" --state open \
+          ISSUE=$(gh issue list --label "autobot-paused" --state open \
             --json number,labels \
-            --jq '.[] | select(.labels | map(.name) | contains(["needs-human"]) | not) | .number' \
+            --jq 'map(select(.labels | map(.name) | contains(["needs-human"]) | not)) | sort_by(.number) | .[0].number // empty' \
             2>/dev/null || true)
-          if [ -z "$ISSUES" ]; then
+          if [ -z "$ISSUE" ]; then
             echo "No paused issues to re-queue."
             exit 0
           fi
-          for ISSUE in $ISSUES; do
-            echo "Re-queuing issue #${ISSUE} for the coder."
-            # Remove the pause flag, then re-add claude-ready so the coder picks
-            # it up. Removing labels emits only 'unlabeled' events; the single
-            # claude-ready add fires claude-issue.yml.
-            gh issue edit "$ISSUE" \
-              --remove-label "autobot-paused" \
-              --remove-label "claude-in-progress" || true
-            gh issue comment "$ISSUE" \
-              --body "[AUTOBOT] Re-queuing issue for the coder after subscription-limit pause."
-            gh issue edit "$ISSUE" --add-label "claude-ready"
-          done
+
+          echo "Re-queuing issue #${ISSUE} for the coder (one-at-a-time; any other paused issues wait for the next tick)."
+          # Remove the pause flag, then re-add claude-ready so the coder picks
+          # it up. Removing labels emits only 'unlabeled' events; the single
+          # claude-ready add fires claude-issue.yml.
+          gh issue edit "$ISSUE" \
+            --remove-label "autobot-paused" \
+            --remove-label "claude-in-progress" || true
+          gh issue comment "$ISSUE" \
+            --body "[AUTOBOT] Re-queuing issue for the coder after subscription-limit pause."
+          gh issue edit "$ISSUE" --add-label "claude-ready"
