@@ -222,6 +222,107 @@ async def test_list_filter_active(client: AsyncClient, auth_headers: dict) -> No
 
 
 # ---------------------------------------------------------------------------
+# interval_hours=0 must return 422, not 500 (ZeroDivisionError guard)
+# ---------------------------------------------------------------------------
+
+
+async def test_interval_hours_zero_returns_422(client: AsyncClient, auth_headers: dict) -> None:
+    """POST with interval_hours=0 returns 422, not 500."""
+    data = {
+        "name": "Bad Practice",
+        "content_type": "text",
+        "content": "Check in",
+        "periodicity_type": "every_n_hours",
+        "interval_hours": 0,
+        "anchor_hour": 6,
+    }
+    resp = await client.post("/api/practices", json=data, headers=auth_headers)
+    assert resp.status_code == 422
+
+
+async def test_interval_hours_negative_returns_422(client: AsyncClient, auth_headers: dict) -> None:
+    """POST with interval_hours=-1 returns 422."""
+    data = {
+        "name": "Bad Practice",
+        "content_type": "text",
+        "content": "Check in",
+        "periodicity_type": "every_n_hours",
+        "interval_hours": -1,
+        "anchor_hour": 6,
+    }
+    resp = await client.post("/api/practices", json=data, headers=auth_headers)
+    assert resp.status_code == 422
+
+
+async def test_patch_interval_hours_zero_returns_422(
+    client: AsyncClient, auth_headers: dict
+) -> None:
+    """PATCH with interval_hours=0 returns 422."""
+    resp = await client.post("/api/practices", json=_VALID_HOURLY, headers=auth_headers)
+    practice_id = resp.json()["id"]
+    resp = await client.patch(
+        f"/api/practices/{practice_id}",
+        json={"interval_hours": 0},
+        headers=auth_headers,
+    )
+    assert resp.status_code == 422
+
+
+# ---------------------------------------------------------------------------
+# name max_length constraint
+# ---------------------------------------------------------------------------
+
+
+async def test_name_too_long_returns_422(client: AsyncClient, auth_headers: dict) -> None:
+    """POST with name longer than 120 chars returns 422."""
+    data = {**_VALID_FIXED, "name": "x" * 121}
+    resp = await client.post("/api/practices", json=data, headers=auth_headers)
+    assert resp.status_code == 422
+
+
+# ---------------------------------------------------------------------------
+# anchor_hour / anchor_minute range validation
+# ---------------------------------------------------------------------------
+
+
+async def test_anchor_hour_out_of_range_returns_422(
+    client: AsyncClient, auth_headers: dict
+) -> None:
+    """POST with anchor_hour=24 returns 422."""
+    data = {**_VALID_HOURLY, "anchor_hour": 24}
+    resp = await client.post("/api/practices", json=data, headers=auth_headers)
+    assert resp.status_code == 422
+
+
+async def test_anchor_minute_out_of_range_returns_422(
+    client: AsyncClient, auth_headers: dict
+) -> None:
+    """POST with anchor_minute=60 returns 422."""
+    data = {**_VALID_HOURLY, "anchor_minute": 60}
+    resp = await client.post("/api/practices", json=data, headers=auth_headers)
+    assert resp.status_code == 422
+
+
+# ---------------------------------------------------------------------------
+# PracticeUpdate cross-field validator: PATCH to every_n_hours without interval_hours
+# ---------------------------------------------------------------------------
+
+
+async def test_patch_change_periodicity_without_interval_returns_422(
+    client: AsyncClient, auth_headers: dict
+) -> None:
+    """PATCH changing periodicity_type to every_n_hours without interval_hours returns 422."""
+    resp = await client.post("/api/practices", json=_VALID_FIXED, headers=auth_headers)
+    practice_id = resp.json()["id"]
+    resp = await client.patch(
+        f"/api/practices/{practice_id}",
+        json={"periodicity_type": "every_n_hours"},
+        headers=auth_headers,
+    )
+    assert resp.status_code == 422
+
+
+# ---------------------------------------------------------------------------
 # 404 cases
 # ---------------------------------------------------------------------------
 

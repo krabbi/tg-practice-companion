@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from bot.models.practice import Practice
 from bot.repositories.practice_repository import PracticeRepository
 
-_HHMM_RE = re.compile(r"^(0[0-9]|1[0-9]|2[0-3]):[0-5][0-9]$")
+HHMM_RE = re.compile(r"^(0[0-9]|1[0-9]|2[0-3]):[0-5][0-9]$")
 
 
 class PracticeValidationError(Exception):
@@ -33,6 +33,8 @@ class PracticeAdminService:
 
     def _check_anchor_window(self, name: str, interval_hours: int, anchor_hour: int) -> None:
         """Raise PracticeValidationError when no slot falls inside the send window."""
+        if interval_hours < 1:
+            raise PracticeValidationError("interval_hours must be >= 1")
         slots = {h for h in range(24) if (h - anchor_hour) % interval_hours == 0}
         admissible = [h for h in slots if self._window_start <= h < self._window_end]
         if not admissible:
@@ -58,7 +60,7 @@ class PracticeAdminService:
                 )
             self._check_anchor_window(name, interval_hours, anchor_hour)
         if periodicity_type == "fixed_times" and schedule_times:
-            bad = [t for t in schedule_times if not _HHMM_RE.match(t)]
+            bad = [t for t in schedule_times if not HHMM_RE.match(t)]
             if bad:
                 raise PracticeValidationError(f"Invalid HH:MM schedule_times entries: {bad!r}")
 

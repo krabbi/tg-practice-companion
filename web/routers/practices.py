@@ -1,16 +1,19 @@
 """REST CRUD for Practice rows — Stage 2 web admin API."""
 
-import re
 import uuid
 from datetime import datetime
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from pydantic import BaseModel, field_validator, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bot.repositories.practice_repository import PracticeRepository
-from bot.services.practice_admin_service import PracticeAdminService, PracticeValidationError
+from bot.services.practice_admin_service import (
+    HHMM_RE,
+    PracticeAdminService,
+    PracticeValidationError,
+)
 from web.dependencies import get_current_user, get_db_session
 
 router = APIRouter(prefix="/api/practices", tags=["practices"])
@@ -19,21 +22,20 @@ _ContentType = Literal[
     "question", "text", "audio", "image", "want", "good_deeds", "motivational_image"
 ]
 _PeriodicityType = Literal["every_n_hours", "fixed_times"]
-_HHMM_RE = re.compile(r"^(0[0-9]|1[0-9]|2[0-3]):[0-5][0-9]$")
 
 
 class PracticeCreate(BaseModel):
     """Request body for POST /api/practices."""
 
-    name: str
+    name: str = Field(..., max_length=120)
     content_type: _ContentType
     content: str | None = None
     media_asset_id: uuid.UUID | None = None
     periodicity_type: _PeriodicityType
-    interval_hours: int | None = None
+    interval_hours: int | None = Field(None, ge=1)
     schedule_times: list[str] | None = None
-    anchor_hour: int = 0
-    anchor_minute: int = 0
+    anchor_hour: int = Field(0, ge=0, le=23)
+    anchor_minute: int = Field(0, ge=0, le=59)
     active: bool = True
     start_date: datetime | None = None
     end_date: datetime | None = None
@@ -44,7 +46,7 @@ class PracticeCreate(BaseModel):
     def _validate_hhmm(cls, v: list[str] | None) -> list[str] | None:
         if v is None:
             return v
-        bad = [t for t in v if not _HHMM_RE.match(t)]
+        bad = [t for t in v if not HHMM_RE.match(t)]
         if bad:
             raise ValueError(f"Invalid HH:MM entries in schedule_times: {bad!r}")
         return v
@@ -59,15 +61,15 @@ class PracticeCreate(BaseModel):
 class PracticeUpdate(BaseModel):
     """Request body for PATCH /api/practices/{id} — all fields optional."""
 
-    name: str | None = None
+    name: str | None = Field(None, max_length=120)
     content_type: _ContentType | None = None
     content: str | None = None
     media_asset_id: uuid.UUID | None = None
     periodicity_type: _PeriodicityType | None = None
-    interval_hours: int | None = None
+    interval_hours: int | None = Field(None, ge=1)
     schedule_times: list[str] | None = None
-    anchor_hour: int | None = None
-    anchor_minute: int | None = None
+    anchor_hour: int | None = Field(None, ge=0, le=23)
+    anchor_minute: int | None = Field(None, ge=0, le=59)
     active: bool | None = None
     start_date: datetime | None = None
     end_date: datetime | None = None
@@ -78,10 +80,16 @@ class PracticeUpdate(BaseModel):
     def _validate_hhmm(cls, v: list[str] | None) -> list[str] | None:
         if v is None:
             return v
-        bad = [t for t in v if not _HHMM_RE.match(t)]
+        bad = [t for t in v if not HHMM_RE.match(t)]
         if bad:
             raise ValueError(f"Invalid HH:MM entries in schedule_times: {bad!r}")
         return v
+
+    @model_validator(mode="after")
+    def _require_interval_hours(self) -> "PracticeUpdate":
+        if self.periodicity_type == "every_n_hours" and self.interval_hours is None:
+            raise ValueError("interval_hours is required when periodicity_type is every_n_hours")
+        return self
 
 
 class PracticeResponse(BaseModel):
