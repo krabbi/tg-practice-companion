@@ -346,3 +346,216 @@ set `anchor_hour=7` on the hourly question practice row.  This is a data-only ch
 After re-seeding with `python -m cli.seed practices content/practices.yaml` the new
 cadence takes effect on the next tick — no restart needed.
 
+---
+
+## Production deployment (M6, AC-15)
+
+### First-time deploy
+
+**Prerequisites:** Docker + Docker Compose v2, access to the server, `.env` file with all
+required secrets.
+
+```bash
+# 1. Clone the repo and copy the env template
+git clone https://github.com/krabbi/tg-practice-companion.git
+cd tg-practice-companion
+cp .env.example .env
+# Edit .env: fill in TELEGRAM_BOT_TOKEN, ANTHROPIC_API_KEY, GROQ_API_KEY,
+#   ALLOWED_USER_IDS, POSTGRES_PASSWORD (generate a random string)
+
+# 2. Start database + bot
+docker compose --profile bot up -d
+
+# The entrypoint automatically runs `alembic upgrade head` before starting the bot.
+# Check logs to confirm a clean start:
+docker compose logs bot --tail 50
+```
+
+### Starting/stopping services
+
+```bash
+# Start bot + db
+docker compose --profile bot up -d
+
+# Stop everything
+docker compose down
+
+# Restart only the bot (e.g. after env change)
+docker compose --profile bot restart bot
+```
+
+### Pulling a new image after a release
+
+The bot image is published to `ghcr.io/krabbi/tg-practice-companion:latest` on every push
+to `main`.  To deploy a new release:
+
+```bash
+docker compose pull bot
+docker compose --profile bot up -d
+```
+
+Or run [Watchtower](https://containrrr.dev/watchtower/) to automatically poll and update:
+
+```bash
+docker compose --profile watchtower up -d
+```
+
+### Environment variable reference
+
+| Variable | Required | Default | Notes |
+|---|---|---|---|
+| `TELEGRAM_BOT_TOKEN` | yes | — | From @BotFather |
+| `ANTHROPIC_API_KEY` | yes | — | AI analysis (AC-11, AC-16) |
+| `GROQ_API_KEY` | no | `""` | Whisper voice transcription; disable by leaving empty |
+| `ALLOWED_USER_IDS` | yes | — | Comma-separated Telegram user IDs |
+| `POSTGRES_PASSWORD` | yes | — | PostgreSQL password; never commit to git |
+| `POSTGRES_USER` | no | `practice` | PostgreSQL user |
+| `MONTHLY_COST_LIMIT_USD` | no | `10.0` | Hard cost ceiling per month (AC-16) |
+| `ANALYSIS_COST_CAP_USD` | no | `0.05` | Per-run ceiling for morning analysis (AC-11) |
+| `SEND_WINDOW_START` | no | `6` | First hour (inclusive) of the send window |
+| `SEND_WINDOW_END` | no | `22` | Last hour (exclusive) of the send window |
+| `LLM_MODEL` | no | `claude-haiku-4-5-20251001` | AI model for analysis |
+| `DEFAULT_LANGUAGE` | no | `ru` | Bot UI language |
+
+No secrets are baked into the Docker image or `docker-compose.yml`.  All credentials are
+injected at runtime via environment variables.
+
+### Database backup
+
+The Postgres data lives in the `practice_pgdata` Docker volume.  To back it up:
+
+```bash
+# Dump to a local file
+docker compose exec db pg_dump -U practice practice > backup_$(date +%F).sql
+
+# Restore from a dump
+docker compose exec -T db psql -U practice practice < backup_YYYY-MM-DD.sql
+```
+
+Schedule this with cron on the host, e.g. daily at 03:00:
+
+```cron
+0 3 * * * cd /path/to/tg-practice-companion && docker compose exec -T db pg_dump -U practice practice > /backups/practice_$(date +\%F).sql
+```
+
+---
+
+## Content loading (operator workflows)
+
+### Workflow A — YAML + make seed (recommended)
+
+Edit the YAML files in `content/`, then run:
+
+```bash
+# Locally (requires .env and DB running):
+python -m cli.seed practices content/practices.yaml
+python -m cli.seed blessings content/blessings.yaml
+
+# Via Docker Compose (no local Python setup needed):
+docker compose run --rm bot python -m cli.seed practices content/practices.yaml
+docker compose run --rm bot python -m cli.seed blessings content/blessings.yaml
+```
+
+All seed commands are **idempotent** — safe to re-run after any edit.
+
+### Workflow B — direct SQL
+
+For quick one-off changes without going through YAML:
+
+```sql
+-- Add a practice
+INSERT INTO practices (id, name, content_type, content, periodicity_type,
+                       schedule_times, anchor_hour, anchor_minute, active, sort_order)
+VALUES (gen_random_uuid(), 'New reminder', 'text', 'Stay hydrated!',
+        'fixed_times', '["10:00"]', 0, 0, true, 500);
+
+-- Deactivate a practice
+UPDATE practices SET active = false WHERE name = 'Old practice';
+```
+
+Changes take effect on the next scheduler tick (within 1 minute) — no restart needed.
+
+### How to add or remove a practice mid-week
+
+1. Edit `content/practices.yaml` (add/update/set `active: false`).
+2. Re-seed: `python -m cli.seed practices content/practices.yaml`
+3. No bot restart required — the scheduler reads the DB on every tick.
+
+### How to upload new audio and get the file_id (audio subcommand)
+
+1. Place the audio file on the server (e.g. `content/media/new_audio.mp3`).
+2. Ensure the practice row already exists (seed it first if not).
+3. Create or update `content/audio.yaml`:
+
+```yaml
+- name: Night hypnosis
+  local_path: content/media/new_audio.mp3
+  mime: audio/mpeg
+```
+
+4. Run the seeder:
+
+```bash
+python -m cli.seed audio content/audio.yaml
+# Or via Docker:
+docker compose run --rm bot python -m cli.seed audio content/audio.yaml
+```
+
+The seeder uploads the file to Telegram, captures the `file_id`, and stores it in
+`media_assets`.  The practice row is updated to reference the new asset.
+
+### How to upload new motivational images (images subcommand)
+
+1. Place the image files on the server (e.g. `content/media/new_image.jpg`).
+2. Create or update `content/images.yaml`:
+
+```yaml
+- local_path: content/media/new_image.jpg
+  mime: image/jpeg
+  active: true
+```
+
+3. Run the seeder:
+
+```bash
+python -m cli.seed images content/images.yaml
+# Or via Docker:
+docker compose run --rm bot python -m cli.seed images content/images.yaml
+```
+
+The seeder uploads the file, captures the `file_id`, and upserts a `media_assets` +
+`motivational_images` row.  The scheduler will include the new image in the random pool
+at 15:00 on the next day (AC-17).
+
+---
+
+## Cost monitoring (AC-16)
+
+Monthly cost by type:
+
+```sql
+SELECT
+    kind,
+    model,
+    COUNT(*) AS calls,
+    SUM(input_tokens) AS total_input_tokens,
+    SUM(output_tokens) AS total_output_tokens,
+    ROUND(SUM(cost_usd)::numeric, 4) AS total_cost_usd
+FROM api_usage_logs
+WHERE created_at >= date_trunc('month', now())
+GROUP BY kind, model
+ORDER BY total_cost_usd DESC;
+```
+
+Total monthly spend:
+
+```sql
+SELECT ROUND(SUM(cost_usd)::numeric, 4) AS monthly_cost_usd
+FROM api_usage_logs
+WHERE created_at >= date_trunc('month', now());
+```
+
+The bot hard-stops analysis calls when the monthly total reaches `MONTHLY_COST_LIMIT_USD`
+(default $10).  Each morning analysis is individually capped at `ANALYSIS_COST_CAP_USD`
+(default $0.05, AC-11).
+

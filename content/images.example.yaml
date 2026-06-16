@@ -1,0 +1,28 @@
+# Example motivational images YAML for cli/seed.py
+#
+# Run: python -m cli.seed images content/images.yaml
+#
+# Each entry must point to a local image file. The seeder uploads the file to
+# Telegram via bot.send_photo (to the first ALLOWED_USER_IDS chat), captures the
+# returned file_id, and upserts a media_assets + motivational_images row.
+#
+# Re-runs are idempotent: if the same file_id already exists in media_assets,
+# the row is updated rather than duplicated.
+#
+# Required fields: local_path
+# Optional fields: mime (default: image/jpeg), active (default: true)
+#
+# Place image files in content/media/ (create the directory if needed).
+# The scheduler draws a random active image at 15:00 each day (AC-17).
+
+- local_path: content/media/motivational1.jpg
+  mime: image/jpeg
+  active: true
+
+- local_path: content/media/motivational2.jpg
+  mime: image/jpeg
+  active: true
+
+- local_path: content/media/motivational3.jpg
+  mime: image/jpeg
+  active: true

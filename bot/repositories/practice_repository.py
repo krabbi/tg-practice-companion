@@ -57,3 +57,10 @@ class PracticeRepository:
         await self._session.flush()
         await self._session.refresh(asset)
         return asset
+
+    async def get_media_asset_by_telegram_file_id(self, telegram_file_id: str) -> MediaAsset | None:
+        """Return the MediaAsset with the given telegram_file_id, or None."""
+        result = await self._session.execute(
+            select(MediaAsset).where(MediaAsset.telegram_file_id == telegram_file_id)
+        )
+        return result.scalar_one_or_none()
