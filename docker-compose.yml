@@ -15,17 +15,23 @@ services:
       retries: 10
 
   bot:
-    build:
-      context: .
-      target: prod
+    image: ghcr.io/krabbi/tg-practice-companion:latest
     profiles: ["bot"]
     restart: unless-stopped
     depends_on:
       db:
         condition: service_healthy
-    env_file: .env
     environment:
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-practice}:${POSTGRES_PASSWORD}@db/practice
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:?TELEGRAM_BOT_TOKEN is required}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:?ANTHROPIC_API_KEY is required}
+      GROQ_API_KEY: ${GROQ_API_KEY:-}
+      ALLOWED_USER_IDS: ${ALLOWED_USER_IDS:?ALLOWED_USER_IDS is required}
+      MONTHLY_COST_LIMIT_USD: ${MONTHLY_COST_LIMIT_USD:-10.0}
+      ANALYSIS_COST_CAP_USD: ${ANALYSIS_COST_CAP_USD:-0.05}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      SEND_WINDOW_START: ${SEND_WINDOW_START:-6}
+      SEND_WINDOW_END: ${SEND_WINDOW_END:-22}
 
   bot-dev:
     build:
@@ -40,6 +46,14 @@ services:
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-practice}:${POSTGRES_PASSWORD}@db/practice
     volumes:
       - .:/app
+
+  watchtower:
+    image: containrrr/watchtower
+    profiles: ["watchtower"]
+    restart: unless-stopped
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    command: --interval 3600 --cleanup
 
 volumes:
   practice_pgdata:

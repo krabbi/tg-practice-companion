@@ -1,0 +1,23 @@
+# Example audio YAML for cli/seed.py
+#
+# Run: python -m cli.seed audio content/audio.yaml
+#
+# Each entry must point to a local audio file and reference an existing practice
+# by name. The seeder uploads the file to Telegram via bot.send_audio (to the
+# first ALLOWED_USER_IDS chat), captures the returned file_id, and upserts the
+# media_assets row linked to that practice.
+#
+# IMPORTANT: seed practices first, then audio:
+#   python -m cli.seed practices content/practices.yaml
+#   python -m cli.seed audio content/audio.yaml
+#
+# Re-runs are idempotent: the media_assets row is updated in place.
+#
+# Required fields: name (must match an existing practice name), local_path
+# Optional fields: mime (default: audio/mpeg)
+#
+# Place audio files in content/media/ (create the directory if needed).
+
+- name: Night hypnosis
+  local_path: content/media/hypnosis.mp3
+  mime: audio/mpeg

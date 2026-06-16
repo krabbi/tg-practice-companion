@@ -46,3 +46,10 @@ class ImageRepository:
         )
         images = list(result.scalars().all())
         return random.choice(images) if images else None
+
+    async def get_by_media_asset_id(self, media_asset_id: uuid.UUID) -> MotivationalImage | None:
+        """Return the MotivationalImage with the given media_asset_id, or None."""
+        result = await self._session.execute(
+            select(MotivationalImage).where(MotivationalImage.media_asset_id == media_asset_id)
+        )
+        return result.scalar_one_or_none()

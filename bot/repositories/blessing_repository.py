@@ -36,3 +36,10 @@ class BlessingRepository:
             .order_by(MorningBlessing.rotation_order)
         )
         return list(result.scalars().all())
+
+    async def get_by_rotation_order(self, rotation_order: int) -> MorningBlessing | None:
+        """Return the blessing with the given rotation_order, or None."""
+        result = await self._session.execute(
+            select(MorningBlessing).where(MorningBlessing.rotation_order == rotation_order)
+        )
+        return result.scalar_one_or_none()

@@ -1,0 +1,39 @@
+# Example blessings YAML for cli/seed.py
+#
+# Run: python -m cli.seed blessings content/blessings.yaml
+#
+# Each entry is upserted by `rotation_order` (idempotent).
+# Required fields: rotation_order, text
+# Optional fields: active (default: true)
+#
+# Blessings are cycled in rotation_order sequence: the scheduler picks
+# today's blessing by (today.toordinal() % count_of_active_blessings)
+# and wraps around after the last entry. No mutable cursor is stored.
+
+- rotation_order: 1
+  text: "Доброе утро! Пусть этот день принесёт тебе радость и спокойствие."
+  active: true
+
+- rotation_order: 2
+  text: "С добрым утром! Ты сильная, мудрая и достойная всего самого лучшего."
+  active: true
+
+- rotation_order: 3
+  text: "Доброе утро! Каждый новый день — это подарок и новая возможность."
+  active: true
+
+- rotation_order: 4
+  text: "С добрым утром! Верь в себя — ты справляешься лучше, чем думаешь."
+  active: true
+
+- rotation_order: 5
+  text: "Доброе утро! Пусть сегодня тебя окружают добрые люди и приятные моменты."
+  active: true
+
+- rotation_order: 6
+  text: "С добрым утром! Твои мысли создают твою реальность — выбирай позитивные."
+  active: true
+
+- rotation_order: 7
+  text: "Доброе утро! Ты заслуживаешь счастья, любви и всего хорошего в жизни."
+  active: true
