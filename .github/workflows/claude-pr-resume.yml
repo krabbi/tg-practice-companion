@@ -38,6 +38,11 @@ jobs:
           # PAT so the needs-code-review label change re-triggers claude-pr-review
           # (the default GITHUB_TOKEN does not fire downstream label workflows).
           GH_TOKEN: ${{ secrets.AUTOMATION_TOKEN }}
+          # No checkout in this job, so gh cannot infer the repo from a git
+          # remote — pin it explicitly, else every gh subcommand fails with
+          # "fatal: not a git repository" (swallowed by `|| true` → silent
+          # no-op; same root cause as the chain-driver #80 regression).
+          GH_REPO: ${{ github.repository }}
         run: |
           # Paused PRs that are NOT parked for a human (needs-human owns those).
           PRS=$(gh pr list --label "autobot-paused" --state open --json number,labels \
@@ -68,6 +73,8 @@ jobs:
         env:
           # PAT so the claude-ready label add re-triggers claude-issue.
           GH_TOKEN: ${{ secrets.AUTOMATION_TOKEN }}
+          # Pin the repo — no checkout in this job (see the step above).
+          GH_REPO: ${{ github.repository }}
         run: |
           # Paused issues (coder-stage cap hit) that are NOT parked for a human.
           ISSUES=$(gh issue list --label "autobot-paused" --state open \
