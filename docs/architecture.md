@@ -445,12 +445,14 @@ Optional: `CORS_ORIGINS` (comma-separated origins), `WEB_PORT` (default `8000`).
 
 ---
 
-## CI automation (Autobot v2)
+## CI automation (Autobot v2 + chain driver)
 
-The repository uses a 7-workflow label-driven pipeline (`feat/autobot-v2-pipeline`, issue #36)
-that runs the full implement-task cycle autonomously in GitHub Actions:
+The repository uses an 8-workflow label-driven pipeline that runs the full
+implement-task cycle autonomously in GitHub Actions:
 
 ```
+[chain driver: claude-queued → claude-ready]
+        ↓
 claude-issue / claude-sweeper  →  claude-pr-review  →  claude-pr-fix (up to 5 rounds)
   →  claude-pr-product-review  →  claude-pr-product-fix (up to 5 rounds)
   →  claude-pr-merge
@@ -459,8 +461,31 @@ claude-issue / claude-sweeper  →  claude-pr-review  →  claude-pr-fix (up to 
 All worker jobs share `concurrency: group: claude-worker`. Routing is done via PR/issue
 labels using the fine-grained PAT secret `AUTOMATION_TOKEN`. The merge gate requires
 named check runs `lint` AND `test` to have conclusion `success`; `skipped`/`neutral`
-(e.g. `build-push` on PRs) are non-blocking. Full operational details and the dry-run
-procedure are in `docs/operations.md` → "Autobot v2" section.
+(e.g. `build-push` on PRs) are non-blocking.
+
+### Labels (issue #80 additions)
+
+| Label | Created by | Consumed by |
+|---|---|---|
+| `claude-queued` | operator | `claude-chain-driver` — promoted to `claude-ready` when all blockers closed |
+
+Create the label once (already created if running from main post-merge):
+```bash
+gh label create "claude-queued" --color "BFD4F2" \
+  --description "Enrolled in an autobot chain — waiting for blockers to close"
+```
+
+### Coder-stage pause tokens (issue #80)
+
+`claude-issue.yml` and `claude-sweeper.yml` now detect `is_error == true` from the
+agent's `execution_file` after the coder step. When triggered (and
+`subtype != "error_max_turns"`), the issue is parked as `autobot-paused` and
+`claude-pr-resume.yml` re-adds `claude-ready` on the next cron tick (~5h).
+Consecutive-pause counter: `<!-- autobot:issue-pause-count -->` in issue comments;
+after 5 pauses the issue escalates to `needs-human`.
+
+Full operational details, chain enrolment instructions, and the dry-run
+procedure are in `docs/operations.md` → "Autobot v2" and "Autobot chain driver" sections.
 
 ## CI / test environment variables
 

@@ -1,0 +1,153 @@
+name: Claude chain driver
+
+# Promotes the next eligible 'claude-queued' issue to 'claude-ready' so the
+# coder workflow picks it up automatically. An issue is "eligible" when every
+# issue listed on a "Blocked by #N" line in its body is already closed.
+#
+# Triggers:
+#   issues [closed]  — instant reaction after each issue closes / merges
+#   schedule         — cron fallback: recovers missed close events and
+#                      re-evaluates after a subscription-limit pause clears
+#
+# Pure bash, no Claude agent. Uses AUTOMATION_TOKEN (PAT) so the
+# claude-ready label add re-triggers the downstream coder workflow.
+on:
+  issues:
+    types: [closed]
+  schedule:
+    # Run every 6 hours as a fallback / recovery sweep.
+    - cron: "30 */6 * * *"
+  workflow_dispatch:
+
+jobs:
+  drive:
+    # Serialise chain-driver runs against each other; never cancel a queued run
+    # (the run in flight may be promoting the exact issue we need).
+    concurrency:
+      group: claude-chain-driver
+      cancel-in-progress: false
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      issues: write
+    steps:
+      - name: Promote next eligible queued issue
+        env:
+          # PAT so the claude-ready label add fires the downstream label workflow.
+          # Default GITHUB_TOKEN does NOT cascade label events.
+          GH_TOKEN: ${{ secrets.AUTOMATION_TOKEN }}
+        run: |
+          # ------------------------------------------------------------------ #
+          # Guard: do nothing if any chain work is currently active.           #
+          # "Active" = some issue carries claude-ready or claude-in-progress,  #
+          # or an open autobot PR exists (has needs-code-review or any stage   #
+          # label that is NOT autobot-paused/needs-human).                     #
+          # ------------------------------------------------------------------ #
+
+          READY_COUNT=$(gh issue list \
+            --label "claude-ready" --state open \
+            --json number --jq 'length' 2>/dev/null || echo 0)
+
+          IN_PROGRESS_COUNT=$(gh issue list \
+            --label "claude-in-progress" --state open \
+            --json number --jq 'length' 2>/dev/null || echo 0)
+
+          # Check for open autobot PRs that are actively being processed
+          # (carrying any pipeline label other than autobot-paused / needs-human).
+          ACTIVE_PR_COUNT=$(gh pr list --state open \
+            --json number,labels \
+            --jq '[.[] | select(
+              (.labels | map(.name) | (
+                contains(["needs-code-review"]) or
+                contains(["code-changes-requested"]) or
+                contains(["code-approved"]) or
+                contains(["product-changes-requested"]) or
+                contains(["product-approved"])
+              ))
+            )] | length' 2>/dev/null || echo 0)
+
+          TOTAL_ACTIVE=$((READY_COUNT + IN_PROGRESS_COUNT + ACTIVE_PR_COUNT))
+
+          echo "Active chain work: ready=${READY_COUNT} in-progress=${IN_PROGRESS_COUNT} active-prs=${ACTIVE_PR_COUNT}"
+
+          if [ "$TOTAL_ACTIVE" -gt 0 ]; then
+            echo "Chain work already active — not promoting any queued issue."
+            exit 0
+          fi
+
+          # ------------------------------------------------------------------ #
+          # Find eligible claude-queued issues.                                #
+          # An issue is eligible when every "Blocked by #N" dep is closed.    #
+          # ------------------------------------------------------------------ #
+
+          # Fetch all open claude-queued issues, sorted by number ascending.
+          QUEUED_ISSUES=$(gh issue list \
+            --label "claude-queued" \
+            --state open \
+            --json number,body \
+            --jq 'sort_by(.number) | .[] | "\(.number)\t\(.body)"' \
+            2>/dev/null || true)
+
+          if [ -z "$QUEUED_ISSUES" ]; then
+            echo "No claude-queued issues found — nothing to promote."
+            exit 0
+          fi
+
+          PROMOTE_NUMBER=""
+
+          while IFS=$'\t' read -r ISSUE_NUM ISSUE_BODY; do
+            [ -z "$ISSUE_NUM" ] && continue
+
+            # Extract all "Blocked by #N" dependencies from the issue body.
+            # Matches lines like: "Blocked by #42" or "blocked by #42, #43"
+            # (case-insensitive, multiple deps per line supported).
+            DEPS=$(printf '%s' "$ISSUE_BODY" \
+              | grep -iE 'blocked by #[0-9]+' \
+              | grep -oE '#[0-9]+' \
+              | grep -oE '[0-9]+' || true)
+
+            if [ -z "$DEPS" ]; then
+              # No blockers declared — immediately eligible.
+              echo "Issue #${ISSUE_NUM} has no blockers — eligible."
+              PROMOTE_NUMBER="$ISSUE_NUM"
+              break
+            fi
+
+            # Check every blocker: all must be closed.
+            ALL_CLOSED=true
+            for DEP in $DEPS; do
+              STATE=$(gh issue view "$DEP" --json state --jq '.state' 2>/dev/null || echo "UNKNOWN")
+              echo "Issue #${ISSUE_NUM}: blocker #${DEP} state=${STATE}"
+              if [ "$STATE" != "CLOSED" ]; then
+                ALL_CLOSED=false
+                break
+              fi
+            done
+
+            if [ "$ALL_CLOSED" = "true" ]; then
+              echo "Issue #${ISSUE_NUM} — all blockers closed, eligible."
+              PROMOTE_NUMBER="$ISSUE_NUM"
+              break
+            else
+              echo "Issue #${ISSUE_NUM} — has open blockers, skipping."
+            fi
+          done <<< "$QUEUED_ISSUES"
+
+          if [ -z "$PROMOTE_NUMBER" ]; then
+            echo "No eligible claude-queued issues found (all have open blockers)."
+            exit 0
+          fi
+
+          # ------------------------------------------------------------------ #
+          # Promote: remove claude-queued, add claude-ready.                   #
+          # Remove first so the issue briefly has neither label — this is safe  #
+          # because the guard above already confirmed the pipeline is idle.    #
+          # Adding claude-ready fires the claude-issue workflow (label event). #
+          # ------------------------------------------------------------------ #
+
+          echo "Promoting issue #${PROMOTE_NUMBER}: claude-queued → claude-ready"
+          gh issue edit "$PROMOTE_NUMBER" --remove-label "claude-queued" || true
+          gh issue edit "$PROMOTE_NUMBER" --add-label "claude-ready"
+          gh issue comment "$PROMOTE_NUMBER" \
+            --body "[AUTOBOT] Chain driver promoted this issue from \`claude-queued\` to \`claude-ready\`. The coder will pick it up shortly."
+          echo "Done: issue #${PROMOTE_NUMBER} is now claude-ready."
