@@ -423,11 +423,45 @@ It is started via `docker compose --profile web up web`.
 - Stores the config on `app.state.config`.
 - Adds `CORSMiddleware`: credentialed (`allow_credentials=True`) when `cors_origins` is non-empty, wildcard-no-credentials otherwise.
 
+### TMA initData validation (`web/auth.py`)
+
+`verify_telegram_init_data(init_data, bot_token, max_age_seconds=86400) → dict | None`
+
+Implements the Telegram Mini App auth scheme (distinct from the Login Widget):
+
+1. URL-decode the `init_data` query string; extract and remove the `hash` field.
+2. Build `data_check_string` = remaining key=value pairs sorted by key, joined with `\n`.
+3. Derive `secret_key = HMAC-SHA256(key=b"WebAppData", msg=bot_token)` — the literal string
+   `WebAppData` is the HMAC key; the bot token is the message (inverse of Login Widget).
+4. Compute `HMAC-SHA256(secret_key, data_check_string).hexdigest()` and compare to `hash`
+   using `hmac.compare_digest` (constant-time).
+5. Reject if `auth_date` is older than `max_age_seconds` (default 86400 s).
+6. Parse the embedded `user` JSON and return it as a dict, or `None` on any failure.
+
+The module is import-free of FastAPI — pure functions, fully unit-testable.
+
+### JWT helpers (`web/auth.py`)
+
+| Function | Signature | Notes |
+|---|---|---|
+| `create_jwt` | `(payload, secret, expires_in=86400) → str` | HS256; appends `exp` claim |
+| `decode_jwt` | `(token, secret) → dict` | Raises `jwt.exceptions.*` on failure |
+| `verify_jwt_token` | `(token, secret) → dict \| None` | Wraps `decode_jwt`; returns None on any error |
+
+### Dependency providers (`web/dependencies.py`)
+
+| Dependency | Type | Notes |
+|---|---|---|
+| `get_db_session` | `AsyncGenerator[AsyncSession, None]` | Yields one session per request from `app.state.session_factory` |
+| `get_current_user` | `dict` | Extracts Bearer JWT; raises 401 missing/invalid, 403 not in `allowed_user_ids` |
+
 ### Endpoints
 
 | Method | Path | Auth | Response |
 |--------|------|------|----------|
 | `GET` | `/api/health` | none | `{"status": "ok"}` |
+| `POST` | `/api/auth/telegram` | none | `{"token": <jwt>}` — validates TMA initData, allowlist check (403), issues JWT |
+| `GET` | `/api/auth/me` | Bearer JWT | JWT claims `{"id": <telegram_id>, "exp": <ts>}` |
 
 ### Docker Compose service
 
