@@ -312,6 +312,7 @@ The journal catch-all carries `StateFilter(None)` so it yields whenever an FSM s
 | Service | File | Responsibility |
 |---|---|---|
 | `PracticeService` | `bot/services/practice_service.py` | Active practice queries, `due_now` evaluation |
+| `PracticeAdminService` | `bot/services/practice_admin_service.py` | Web admin CRUD: `create`, `update`, `delete`, `get`, `list_all`; owns `commit()`; validates `fixed_times` HH:MM format, `every_n_hours` requires `interval_hours`, anchor-window check |
 | `DeliveryService` | `bot/services/delivery_service.py` | Renders and sends a practice; writes `pending_prompt` for `question` practices |
 | `TimezoneService` | `bot/services/timezone_service.py` | Validate IANA timezone, persist, stamp `tz_changed_at` |
 | `SkipDayService` | `bot/services/skip_day_service.py` | Set `skip_until = local today`, commit |
@@ -331,7 +332,7 @@ The journal catch-all carries `StateFilter(None)` so it yields whenever an FSM s
 | Repository | File | Responsibility |
 |---|---|---|
 | `UserRepository` | `bot/repositories/user_repository.py` | User CRUD; `get_first`, `get_by_telegram_id`, `save` |
-| `PracticeRepository` | `bot/repositories/practice_repository.py` | Practice + MediaAsset CRUD; `get_active_practices`, `get_by_name` |
+| `PracticeRepository` | `bot/repositories/practice_repository.py` | Practice + MediaAsset CRUD; `get_active_practices`, `get_by_name`, `list_all(active)`, `delete(id)` |
 | `PracticeSendRepository` | `bot/repositories/practice_send_repository.py` | `try_claim` (insert-or-skip), `count_in_period(user_id, start, end)`, `prune_older_than` |
 | `PendingPromptRepository` | `bot/repositories/pending_prompt_repository.py` | `create`, `get_by_telegram_message_id`, `newest_unconsumed`, `mark_consumed`, `mark_clarify_sent` |
 | `JournalRepository` | `bot/repositories/journal_repository.py` | `create`, `get_by_id`, `daily_stats(user_id, date)` → `DailyStats(n_total, n_leads)`, `period_stats(user_id, start, end)` → `PeriodStats(n_total, n_leads)` |
@@ -462,6 +463,11 @@ The module is import-free of FastAPI — pure functions, fully unit-testable.
 | `GET` | `/api/health` | none | `{"status": "ok"}` |
 | `POST` | `/api/auth/telegram` | none | `{"token": <jwt>}` — validates TMA initData, allowlist check (403), issues JWT |
 | `GET` | `/api/auth/me` | Bearer JWT | JWT claims `{"id": <telegram_id>, "exp": <ts>}` |
+| `GET` | `/api/practices` | Bearer JWT | Array of `PracticeResponse`; optional `?active=true\|false` filter |
+| `GET` | `/api/practices/{id}` | Bearer JWT | Single `PracticeResponse`; 404 if not found |
+| `POST` | `/api/practices` | Bearer JWT | Create practice; 201 `PracticeResponse`; 422 on schema errors; 400 on business-rule violations |
+| `PATCH` | `/api/practices/{id}` | Bearer JWT | Partial update; 200 `PracticeResponse`; 404 if not found; 400 on violations |
+| `DELETE` | `/api/practices/{id}` | Bearer JWT | 204 No Content; 404 if not found |
 
 ### Docker Compose service
 

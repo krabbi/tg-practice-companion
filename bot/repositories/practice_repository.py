@@ -58,6 +58,27 @@ class PracticeRepository:
         await self._session.refresh(asset)
         return asset
 
+    async def list_all(self, active: bool | None = None) -> list[Practice]:
+        """Return all Practice rows (optionally filtered by active flag), ordered by sort_order."""
+        query = (
+            select(Practice)
+            .options(selectinload(Practice.media_asset))
+            .order_by(Practice.sort_order)
+        )
+        if active is not None:
+            query = query.where(Practice.active.is_(active))
+        result = await self._session.execute(query)
+        return list(result.scalars().all())
+
+    async def delete(self, practice_id: uuid.UUID) -> bool:
+        """Delete a Practice by UUID; flush. Returns False when not found."""
+        practice = await self.get_by_id(practice_id)
+        if practice is None:
+            return False
+        await self._session.delete(practice)
+        await self._session.flush()
+        return True
+
     async def get_media_asset_by_telegram_file_id(self, telegram_file_id: str) -> MediaAsset | None:
         """Return the MediaAsset with the given telegram_file_id, or None."""
         result = await self._session.execute(
