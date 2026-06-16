@@ -44,6 +44,9 @@ class Config(BaseSettings):
     jwt_secret: str = ""
     cors_origins: list[str] = []
 
+    # Media storage — path on disk where uploaded audio/images are persisted (B4)
+    media_storage_dir: str = "/data/media"
+
     @field_validator("allowed_user_ids", mode="before")
     @classmethod
     def parse_csv_ids(cls, v: Any) -> list[int]:

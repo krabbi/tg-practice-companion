@@ -307,12 +307,13 @@ The journal catch-all carries `StateFilter(None)` so it yields whenever an FSM s
 
 `TranscriptionService` is injected as `None` when `config.groq_api_key` is empty; handlers guard with `if transcription_service is None`.
 
-### Services (M1 + M2)
+### Services (M1 + M2 + B4)
 
 | Service | File | Responsibility |
 |---|---|---|
 | `PracticeService` | `bot/services/practice_service.py` | Active practice queries, `due_now` evaluation |
 | `PracticeAdminService` | `bot/services/practice_admin_service.py` | Web admin CRUD: `create`, `update`, `delete`, `get`, `list_all`; owns `commit()`; validates `fixed_times` HH:MM format, `every_n_hours` requires `interval_hours`, anchor-window check |
+| `MediaAdminService` | `bot/services/media_service.py` | Upload file bytes to disk, send to Telegram to capture `telegram_file_id`, upsert `MediaAsset` row; manage motivational-image pool; owns `commit()`. Bot injected as optional (None → Telegram step skipped in tests). |
 | `DeliveryService` | `bot/services/delivery_service.py` | Renders and sends a practice; writes `pending_prompt` for `question` practices |
 | `TimezoneService` | `bot/services/timezone_service.py` | Validate IANA timezone, persist, stamp `tz_changed_at` |
 | `SkipDayService` | `bot/services/skip_day_service.py` | Set `skip_until = local today`, commit |
@@ -327,12 +328,13 @@ The journal catch-all carries `StateFilter(None)` so it yields whenever an FSM s
 | `GoodDeedService` | `bot/services/good_deed_service.py` | Insert a free-text `GoodDeed` row for the local calendar date; atomically consumes the associated `good_deeds` pending_prompt (AC-10) |
 | `ReportService` | `bot/services/report_service.py` | Aggregate journal stats, practice-send counts, and good deeds over a date range into a plain-text report (AC-12); no LLM |
 
-### Repositories (M1 + M2 + M3)
+### Repositories (M1 + M2 + M3 + B4)
 
 | Repository | File | Responsibility |
 |---|---|---|
 | `UserRepository` | `bot/repositories/user_repository.py` | User CRUD; `get_first`, `get_by_telegram_id`, `save` |
 | `PracticeRepository` | `bot/repositories/practice_repository.py` | Practice + MediaAsset CRUD; `get_active_practices`, `get_by_name`, `list_all(active)`, `delete(id)` |
+| `MediaAssetRepository` | `bot/repositories/media_asset_repository.py` | `create`, `list_all(kind)`, `get(id)`, `delete(id)` — dedicated CRUD for `MediaAsset` rows used by the web admin upload flow |
 | `PracticeSendRepository` | `bot/repositories/practice_send_repository.py` | `try_claim` (insert-or-skip), `count_in_period(user_id, start, end)`, `prune_older_than` |
 | `PendingPromptRepository` | `bot/repositories/pending_prompt_repository.py` | `create`, `get_by_telegram_message_id`, `newest_unconsumed`, `mark_consumed`, `mark_clarify_sent` |
 | `JournalRepository` | `bot/repositories/journal_repository.py` | `create`, `get_by_id`, `daily_stats(user_id, date)` → `DailyStats(n_total, n_leads)`, `period_stats(user_id, start, end)` → `PeriodStats(n_total, n_leads)` |
@@ -408,6 +410,7 @@ All fields are loaded from environment variables (or `.env` file) via `pydantic-
 | `send_window_end` | `SEND_WINDOW_END` | `int` | `22` | End of send window (local hour, exclusive) |
 | `jwt_secret` | `JWT_SECRET` | `str` | `""` | Stage-2 stub; unused in Stage 1 |
 | `cors_origins` | `CORS_ORIGINS` | `list[str]` | `[]` | Stage-2 stub; unused in Stage 1 |
+| `media_storage_dir` | `MEDIA_STORAGE_DIR` | `str` | `"/data/media"` | Filesystem path for uploaded audio/image files (B4); mount as a volume in production |
 
 ## Web API (Stage 2)
 
@@ -468,6 +471,10 @@ The module is import-free of FastAPI — pure functions, fully unit-testable.
 | `POST` | `/api/practices` | Bearer JWT | Create practice; 201 `PracticeResponse`; 422 on schema errors; 400 on business-rule violations |
 | `PATCH` | `/api/practices/{id}` | Bearer JWT | Partial update; 200 `PracticeResponse`; 404 if not found; 400 on violations |
 | `DELETE` | `/api/practices/{id}` | Bearer JWT | 204 No Content; 404 if not found |
+| `POST` | `/api/media` | Bearer JWT | Upload audio/image (multipart `file` + `kind`); saves to disk, uploads to Telegram; 201 `MediaAssetResponse`; 413 if >50 MB |
+| `GET` | `/api/media` | Bearer JWT | List all media assets; optional `?kind=audio\|image` filter |
+| `DELETE` | `/api/media/{id}` | Bearer JWT | Delete media asset row and file on disk; 204; 404 if not found |
+| `POST` | `/api/motivational-images` | Bearer JWT | Add a `MediaAsset` (kind=image) to the motivational-image pool; 201 `MotivationalImageResponse`; 400 if asset not found or wrong kind |
 
 ### Docker Compose service
 
@@ -481,7 +488,9 @@ The service uses `uvicorn web.main:create_app --factory --host 0.0.0.0 --port ${
 It shares the `db` service's Postgres instance via the same `DATABASE_URL`.
 
 Required env vars: `DATABASE_URL`, `JWT_SECRET`, `TELEGRAM_BOT_TOKEN`, `ALLOWED_USER_IDS`, `ANTHROPIC_API_KEY`.
-Optional: `CORS_ORIGINS` (comma-separated origins), `WEB_PORT` (default `8000`).
+Optional: `CORS_ORIGINS` (comma-separated origins), `WEB_PORT` (default `8000`), `MEDIA_STORAGE_DIR` (default `/data/media`).
+
+The `web` service mounts the `practice_media` Docker volume at `/data/media` so uploaded files survive container restarts. The `MEDIA_STORAGE_DIR` env var controls the path inside the container.
 
 ---
 
