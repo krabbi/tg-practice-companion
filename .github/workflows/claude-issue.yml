@@ -183,6 +183,17 @@ jobs:
           PR_NUMBER=$(echo "${PR_URL}" | grep -oE '[0-9]+$')
           BRANCH=$(gh pr view "${PR_NUMBER}" --json headRefName --jq .headRefName)
 
+          # The preceding claude-code-action step rewrites origin's URL to embed
+          # its own short-lived token (logged as "Updated remote URL with
+          # authentication token"). That token is already dead by the time this
+          # step runs minutes later, so a plain `git fetch origin` reuses it and
+          # dies with "Invalid username or token" (exit 128) — which under
+          # `bash -e` aborted the whole job before "Route to code review",
+          # stranding the PR unlabelled with the issue locked (PR #62/#64). This
+          # is NOT a bad PAT — the PAT is valid and works for the gh calls above.
+          # Re-point origin at the PAT so fetch/checkout/push use a live credential.
+          git remote set-url origin "https://x-access-token:${AUTOMATION_TOKEN}@github.com/${{ github.repository }}.git"
+
           git fetch origin "${BRANCH}"
           git checkout -f -B "${BRANCH}" "origin/${BRANCH}"
 
@@ -197,30 +208,28 @@ jobs:
             git config user.email "autobot@users.noreply.github.com"
             git add -A
             git commit -m "style: autobot ruff format backstop"
-            # Push with the PAT, NOT the default GITHUB_TOKEN: pushes made with
-            # GITHUB_TOKEN do not re-trigger CI (anti-recursion), which would leave
-            # the PR's check-runs stuck on the old red commit.
-            #
-            # The push must NOT be allowed to fail the whole job. It did on PR #62
-            # (2026-06-15): the PAT push was rejected ("Invalid username or token")
-            # while the SAME token worked for gh API calls in this job, the step
-            # exited 128 under `bash -e`, and the tail "Route to code review" step
-            # was skipped — so needs-code-review was never set and the PR was
-            # stranded with no label while the issue stayed locked. The format
-            # backstop is best-effort: CI's `lint` job + the merge gate are the
-            # real formatting gate, so a failed backstop push must degrade to a
-            # warning and let routing to review proceed, not block the pipeline.
-            if git push "https://x-access-token:${AUTOMATION_TOKEN}@github.com/${{ github.repository }}.git" "HEAD:${BRANCH}"; then
+            # Push via origin (now PAT-authed above), NOT the default GITHUB_TOKEN:
+            # GITHUB_TOKEN pushes don't re-trigger CI (anti-recursion), which would
+            # leave the PR's check-runs stuck on the old red commit. Best-effort:
+            # a failed push must NOT block routing to review — CI's `lint` job and
+            # the merge gate are the authoritative formatting gate. (Routing is
+            # additionally guarded by `if: always()` on the next step.)
+            if git push origin "HEAD:${BRANCH}"; then
               echo "Pushed formatting backstop commit to ${BRANCH}."
             else
               echo "WARNING: formatting backstop push failed — continuing to review anyway."
-              gh pr comment "${PR_NUMBER}" --body "[AUTOBOT] ruff-format backstop push failed (check AUTOMATION_TOKEN validity for git push). Proceeding to code review regardless — CI \`lint\` and the merge gate remain the authoritative formatting gate. <!-- autobot:format-backstop-push-failed -->" || true
+              gh pr comment "${PR_NUMBER}" --body "[AUTOBOT] ruff-format backstop push failed. Proceeding to code review regardless — CI \`lint\` and the merge gate remain the authoritative formatting gate. <!-- autobot:format-backstop-push-failed -->" || true
             fi
           fi
 
       # Tail: set needs-code-review on the PR and remove claude-ready from the
       # issue using the PAT so the label change re-triggers the review workflow.
+      # `if: always()` + the PR_URL guard: routing is the critical hand-off and
+      # must survive any failure in the best-effort formatting step above, so a
+      # git hiccup there can never again strand the PR unlabelled. Runs only when
+      # a PR exists (the Verify step exits without setting PR_URL when it doesn't).
       - name: Route to code review
+        if: ${{ always() && env.PR_URL != '' }}
         env:
           GH_TOKEN: ${{ secrets.AUTOMATION_TOKEN }}
         run: |
