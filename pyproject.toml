@@ -18,6 +18,9 @@ dependencies = [
     "pydantic-settings>=2.2",
     "python-dotenv>=1.0",
     "pyyaml>=6.0",
+    "fastapi>=0.111",
+    "uvicorn[standard]>=0.29",
+    "pyjwt>=2.8",
 ]
 
 [project.optional-dependencies]
@@ -28,6 +31,7 @@ dev = [
     "pytest-asyncio",
     "pytest-mock",
     "pytest-cov",
+    "httpx>=0.27",
     # Pinned to match CI (.github/workflows/ci.yml) and .pre-commit-config.yaml —
     # keep all three in sync (formatting output is version-sensitive; a skew
     # reintroduces the PR #58 "passes hook, fails CI format-check" failure mode).
@@ -36,7 +40,7 @@ dev = [
 ]
 
 [tool.setuptools.packages.find]
-include = ["bot*", "cli*"]
+include = ["bot*", "cli*", "web*"]
 
 [tool.ruff]
 line-length = 100
@@ -50,7 +54,7 @@ ignore = ["E501"]
 asyncio_mode = "auto"
 
 [tool.coverage.run]
-source = ["bot", "cli"]
+source = ["bot", "cli", "web"]
 omit = ["bot/__main__.py"]
 
 [tool.coverage.report]
