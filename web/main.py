@@ -9,6 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from bot.config import Config
 from bot.db import build_session_factory
 from web.routers.auth import router as auth_router
+from web.routers.media import media_router, motivational_router
 from web.routers.practices import router as practices_router
 
 
@@ -28,8 +29,18 @@ def create_app(config: Config | None = None) -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
+        from aiogram import Bot
+
         app.state.session_factory = session_factory
-        yield
+        # Create a Bot for Telegram file uploads unless one was injected externally (e.g. tests).
+        own_bot = not getattr(app.state, "bot", None)
+        if own_bot:
+            app.state.bot = Bot(token=config.telegram_bot_token)
+        try:
+            yield
+        finally:
+            if own_bot and getattr(app.state, "bot", None):
+                await app.state.bot.session.close()
 
     app = FastAPI(title="tg-practice-companion web", lifespan=lifespan)
     app.state.config = config
@@ -58,5 +69,7 @@ def create_app(config: Config | None = None) -> FastAPI:
 
     app.include_router(auth_router)
     app.include_router(practices_router)
+    app.include_router(media_router)
+    app.include_router(motivational_router)
 
     return app
