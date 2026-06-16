@@ -270,7 +270,12 @@ GET /api/practices/3fa85f64-5717-4562-b3fc-2c963f66afa6
 
 ## Загрузка медиафайлов (только для оператора)
 
-Оператор загружает аудио- и изображения через веб-API администратора.
+Оператор загружает аудиофайлы и изображения через веб-API администратора.
+
+### Аутентификация
+
+Все запросы к `/api/media` и `/api/motivational-images` требуют заголовка `Authorization: Bearer <token>`.
+Токен получается через `POST /api/auth/telegram` (TMA initData) и действует 24 часа (см. раздел «Управление практиками через веб-API»).
 
 ### Загрузить файл — `POST /api/media`
 
@@ -280,7 +285,7 @@ Multipart-форма с полями:
 
 При загрузке файл сохраняется на диск (`MEDIA_STORAGE_DIR`) и отправляется боту в Telegram
 для получения `telegram_file_id`. Ответ содержит UUID нового `media_asset` со значениями
-`storage_path`, `telegram_file_id`, `mime`, и `kind`.
+`storage_path`, `telegram_file_id`, `mime` и `kind`.
 
 ### Список файлов — `GET /api/media`
 
