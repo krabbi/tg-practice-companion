@@ -81,11 +81,14 @@ jobs:
           # ------------------------------------------------------------------ #
 
           # Fetch all open claude-queued issues, sorted by number ascending.
+          # The body is base64-encoded so a multi-line issue body stays on a
+          # single output line — a raw "\(.body)" would expand embedded newlines
+          # into literal newlines and break the one-row-per-issue loop below.
           QUEUED_ISSUES=$(gh issue list \
             --label "claude-queued" \
             --state open \
             --json number,body \
-            --jq 'sort_by(.number) | .[] | "\(.number)\t\(.body)"' \
+            --jq 'sort_by(.number) | .[] | "\(.number)\t\(.body | @base64)"' \
             2>/dev/null || true)
 
           if [ -z "$QUEUED_ISSUES" ]; then
@@ -95,8 +98,12 @@ jobs:
 
           PROMOTE_NUMBER=""
 
-          while IFS=$'\t' read -r ISSUE_NUM ISSUE_BODY; do
+          while IFS=$'\t' read -r ISSUE_NUM ISSUE_B64; do
             [ -z "$ISSUE_NUM" ] && continue
+
+            # Decode the base64-encoded body. Tolerate an empty/whitespace body
+            # (base64 -d may fail) without aborting the loop.
+            ISSUE_BODY=$(printf '%s' "$ISSUE_B64" | base64 -d 2>/dev/null || true)
 
             # Extract all "Blocked by #N" dependencies from the issue body.
             # Matches lines like: "Blocked by #42" or "blocked by #42, #43"
