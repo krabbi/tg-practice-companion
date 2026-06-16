@@ -2,12 +2,13 @@
 
 import uuid
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, datetime
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bot.models.journal import JournalEntry, SelfAssessment
+from bot.models.practice import Practice
 
 
 @dataclass(frozen=True)
@@ -24,6 +25,20 @@ class DailyStats:
 
     n_total: int
     n_leads: int
+
+
+@dataclass(frozen=True)
+class JournalEntryRow:
+    """Flat projection of a journal entry with joined practice name and self-assessment."""
+
+    id: uuid.UUID
+    text: str
+    source: str
+    created_at: datetime
+    practice_id: uuid.UUID | None
+    practice_name: str | None
+    leads_to_goals: bool | None
+    assessment_set_via: str | None
 
 
 class JournalRepository:
@@ -58,6 +73,98 @@ class JournalRepository:
             select(JournalEntry).where(JournalEntry.id == entry_id)
         )
         return result.scalar_one_or_none()
+
+    async def get_by_id_with_details(self, entry_id: uuid.UUID) -> JournalEntryRow | None:
+        """Return a JournalEntryRow with joined practice name and self-assessment, or None."""
+        result = await self._session.execute(
+            select(
+                JournalEntry.id,
+                JournalEntry.text,
+                JournalEntry.source,
+                JournalEntry.created_at,
+                JournalEntry.practice_id,
+                Practice.name.label("practice_name"),
+                SelfAssessment.leads_to_goals,
+                SelfAssessment.set_via.label("assessment_set_via"),
+            )
+            .outerjoin(Practice, Practice.id == JournalEntry.practice_id)
+            .outerjoin(SelfAssessment, SelfAssessment.journal_entry_id == JournalEntry.id)
+            .where(JournalEntry.id == entry_id)
+        )
+        row = result.one_or_none()
+        if row is None:
+            return None
+        return JournalEntryRow(
+            id=row.id,
+            text=row.text,
+            source=row.source,
+            created_at=row.created_at,
+            practice_id=row.practice_id,
+            practice_name=row.practice_name,
+            leads_to_goals=row.leads_to_goals,
+            assessment_set_via=row.assessment_set_via,
+        )
+
+    async def list_paginated(
+        self,
+        user_id: int,
+        *,
+        page: int,
+        page_size: int,
+        date_from: date | None = None,
+        date_to: date | None = None,
+        practice_id: uuid.UUID | None = None,
+    ) -> tuple[list[JournalEntryRow], int]:
+        """Return a page of journal entries with joined practice name and self-assessment.
+
+        Filters (all optional): date_from/date_to (inclusive), practice_id.
+        Returns (rows, total_count).
+        """
+        conditions = [JournalEntry.user_id == user_id]
+        if date_from is not None:
+            conditions.append(func.date(JournalEntry.created_at) >= date_from)
+        if date_to is not None:
+            conditions.append(func.date(JournalEntry.created_at) <= date_to)
+        if practice_id is not None:
+            conditions.append(JournalEntry.practice_id == practice_id)
+
+        count_result = await self._session.execute(
+            select(func.count(JournalEntry.id)).where(*conditions)
+        )
+        total: int = count_result.scalar_one() or 0
+
+        rows_result = await self._session.execute(
+            select(
+                JournalEntry.id,
+                JournalEntry.text,
+                JournalEntry.source,
+                JournalEntry.created_at,
+                JournalEntry.practice_id,
+                Practice.name.label("practice_name"),
+                SelfAssessment.leads_to_goals,
+                SelfAssessment.set_via.label("assessment_set_via"),
+            )
+            .outerjoin(Practice, Practice.id == JournalEntry.practice_id)
+            .outerjoin(SelfAssessment, SelfAssessment.journal_entry_id == JournalEntry.id)
+            .where(*conditions)
+            .order_by(JournalEntry.created_at.desc())
+            .limit(page_size)
+            .offset((page - 1) * page_size)
+        )
+        items = [
+            JournalEntryRow(
+                id=r.id,
+                text=r.text,
+                source=r.source,
+                created_at=r.created_at,
+                practice_id=r.practice_id,
+                practice_name=r.practice_name,
+                leads_to_goals=r.leads_to_goals,
+                assessment_set_via=r.assessment_set_via,
+            )
+            for r in rows_result.all()
+        ]
+        return items, total
 
     async def daily_stats(self, user_id: int, target_date: date) -> DailyStats:
         """Return n_total and n_leads for a user's journal entries on target_date.
