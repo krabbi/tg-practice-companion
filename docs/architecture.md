@@ -408,6 +408,43 @@ All fields are loaded from environment variables (or `.env` file) via `pydantic-
 | `jwt_secret` | `JWT_SECRET` | `str` | `""` | Stage-2 stub; unused in Stage 1 |
 | `cors_origins` | `CORS_ORIGINS` | `list[str]` | `[]` | Stage-2 stub; unused in Stage 1 |
 
+## Web API (Stage 2)
+
+The `web/` package is a FastAPI companion service that shares the bot's Postgres database.
+It is started via `docker compose --profile web up web`.
+
+### App factory
+
+`web/main.py::create_app(config: Config | None = None) -> FastAPI`
+
+- Accepts an optional `Config` instance; falls back to `Config()` (reads env/`.env`) when called as a uvicorn factory (`--factory` flag).
+- Raises `ValueError` if `config.jwt_secret` is empty — misconfigured deployments fail at startup.
+- Calls `build_session_factory(config.database_url)` from `bot.db` and stores the result on `app.state.session_factory`.
+- Stores the config on `app.state.config`.
+- Adds `CORSMiddleware`: credentialed (`allow_credentials=True`) when `cors_origins` is non-empty, wildcard-no-credentials otherwise.
+
+### Endpoints
+
+| Method | Path | Auth | Response |
+|--------|------|------|----------|
+| `GET` | `/api/health` | none | `{"status": "ok"}` |
+
+### Docker Compose service
+
+Profile: `web`. Build target: `base` (same image as the bot, no extra layers).
+
+```
+docker compose --profile web up web
+```
+
+The service uses `uvicorn web.main:create_app --factory --host 0.0.0.0 --port ${WEB_PORT:-8000}`.
+It shares the `db` service's Postgres instance via the same `DATABASE_URL`.
+
+Required env vars: `DATABASE_URL`, `JWT_SECRET`, `TELEGRAM_BOT_TOKEN`, `ALLOWED_USER_IDS`, `ANTHROPIC_API_KEY`.
+Optional: `CORS_ORIGINS` (comma-separated origins), `WEB_PORT` (default `8000`).
+
+---
+
 ## CI automation (Autobot v2)
 
 The repository uses a 7-workflow label-driven pipeline (`feat/autobot-v2-pipeline`, issue #36)
