@@ -8,6 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from bot.config import Config
 from bot.db import build_session_factory
+from web.routers.auth import router as auth_router
 
 
 def create_app(config: Config | None = None) -> FastAPI:
@@ -53,5 +54,7 @@ def create_app(config: Config | None = None) -> FastAPI:
     async def health() -> dict[str, str]:
         """Return service liveness."""
         return {"status": "ok"}
+
+    app.include_router(auth_router)
 
     return app
