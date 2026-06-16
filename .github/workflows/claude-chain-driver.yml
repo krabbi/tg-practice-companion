@@ -11,6 +11,15 @@ name: Claude chain driver
 #
 # Pure bash, no Claude agent. Uses AUTOMATION_TOKEN (PAT) so the
 # claude-ready label add re-triggers the downstream coder workflow.
+#
+# IMPORTANT — all issue/PR queries go through the REST API (`gh api`), NOT
+# `gh issue list` / `gh pr list`. The latter use GitHub's GraphQL search
+# endpoint, which a fine-grained PAT (AUTOMATION_TOKEN) silently returns
+# EMPTY for — so `gh issue list --label claude-queued` reported "no issues"
+# even when queued issues existed, and the chain never advanced (issue #80
+# regression, debugged 2026-06-16). REST `/issues?labels=` is token-consistent.
+# NB: the REST `/issues` endpoint also returns pull requests — filter them out
+# with `select(.pull_request == null)`.
 on:
   issues:
     types: [closed]
@@ -31,31 +40,51 @@ jobs:
     permissions:
       issues: write
     steps:
+      # TEMP DIAGNOSTIC (remove before merge) — prove the root cause in the
+      # real runner: compare GraphQL `gh issue list` vs REST `gh api` for the
+      # same label, under AUTOMATION_TOKEN (fine-grained PAT).
+      - name: DIAG list methods
+        env:
+          GH_TOKEN: ${{ secrets.AUTOMATION_TOKEN }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -uo pipefail
+          echo "gh version: $(gh --version | head -1)"
+          echo "--- method A: gh issue list --label claude-queued (GraphQL) ---"
+          gh issue list --label "claude-queued" --state open --json number --jq '[.[].number]' 2>&1 || echo "ERR"
+          echo "--- method B: gh api /issues?labels=claude-queued (REST) ---"
+          gh api "repos/${REPO}/issues?labels=claude-queued&state=open&per_page=100" \
+            --jq '[.[] | select(.pull_request == null) | .number]' 2>&1 || echo "ERR"
+
       - name: Promote next eligible queued issue
         env:
           # PAT so the claude-ready label add fires the downstream label workflow.
           # Default GITHUB_TOKEN does NOT cascade label events.
           GH_TOKEN: ${{ secrets.AUTOMATION_TOKEN }}
+          REPO: ${{ github.repository }}
         run: |
+          set -uo pipefail
+
           # ------------------------------------------------------------------ #
           # Guard: do nothing if any chain work is currently active.           #
           # "Active" = some issue carries claude-ready or claude-in-progress,  #
-          # or an open autobot PR exists (has needs-code-review or any stage   #
-          # label that is NOT autobot-paused/needs-human).                     #
+          # or an open autobot PR exists (has any stage label that is NOT      #
+          # autobot-paused / needs-human).                                     #
+          #                                                                    #
+          # All reads use REST (`gh api`) — see file header for why.           #
           # ------------------------------------------------------------------ #
 
-          READY_COUNT=$(gh issue list \
-            --label "claude-ready" --state open \
-            --json number --jq 'length' 2>/dev/null || echo 0)
+          # Count open issues carrying a given label (REST, PR-filtered).
+          count_issues_with_label() {
+            gh api "repos/${REPO}/issues?labels=$1&state=open&per_page=100" \
+              --jq '[.[] | select(.pull_request == null)] | length' 2>/dev/null || echo 0
+          }
 
-          IN_PROGRESS_COUNT=$(gh issue list \
-            --label "claude-in-progress" --state open \
-            --json number --jq 'length' 2>/dev/null || echo 0)
+          READY_COUNT=$(count_issues_with_label "claude-ready")
+          IN_PROGRESS_COUNT=$(count_issues_with_label "claude-in-progress")
 
-          # Check for open autobot PRs that are actively being processed
-          # (carrying any pipeline label other than autobot-paused / needs-human).
-          ACTIVE_PR_COUNT=$(gh pr list --state open \
-            --json number,labels \
+          # Open PRs carrying any active pipeline stage label.
+          ACTIVE_PR_COUNT=$(gh api "repos/${REPO}/pulls?state=open&per_page=100" \
             --jq '[.[] | select(
               (.labels | map(.name) | (
                 contains(["needs-code-review"]) or
@@ -81,14 +110,13 @@ jobs:
           # ------------------------------------------------------------------ #
 
           # Fetch all open claude-queued issues, sorted by number ascending.
+          # REST (`gh api`) — reliable under a fine-grained PAT, unlike
+          # `gh issue list`. PRs are filtered out (REST /issues includes them).
           # The body is base64-encoded so a multi-line issue body stays on a
           # single output line — a raw "\(.body)" would expand embedded newlines
           # into literal newlines and break the one-row-per-issue loop below.
-          QUEUED_ISSUES=$(gh issue list \
-            --label "claude-queued" \
-            --state open \
-            --json number,body \
-            --jq 'sort_by(.number) | .[] | "\(.number)\t\(.body | @base64)"' \
+          QUEUED_ISSUES=$(gh api "repos/${REPO}/issues?labels=claude-queued&state=open&per_page=100" \
+            --jq 'map(select(.pull_request == null)) | sort_by(.number) | .[] | "\(.number)\t\(.body // "" | @base64)"' \
             2>/dev/null || true)
 
           if [ -z "$QUEUED_ISSUES" ]; then
@@ -106,12 +134,15 @@ jobs:
             ISSUE_BODY=$(printf '%s' "$ISSUE_B64" | base64 -d 2>/dev/null || true)
 
             # Extract all "Blocked by #N" dependencies from the issue body.
-            # Matches lines like: "Blocked by #42" or "blocked by #42, #43"
-            # (case-insensitive, multiple deps per line supported).
+            # Accepts the plain "Blocked by #42" form and the markdown-styled
+            # "**Blocked by:** #42" form, case-insensitive, multiple deps per
+            # line. The leading marker may be followed by an optional ":" and/or
+            # markdown "*" before the "#N" tokens.
             DEPS=$(printf '%s' "$ISSUE_BODY" \
-              | grep -iE 'blocked by #[0-9]+' \
+              | grep -ioE 'blocked by[*: ]+#[0-9]+([[:space:],*#0-9]*)' \
               | grep -oE '#[0-9]+' \
-              | grep -oE '[0-9]+' || true)
+              | grep -oE '[0-9]+' \
+              | sort -u || true)
 
             if [ -z "$DEPS" ]; then
               # No blockers declared — immediately eligible.
@@ -123,9 +154,10 @@ jobs:
             # Check every blocker: all must be closed.
             ALL_CLOSED=true
             for DEP in $DEPS; do
-              STATE=$(gh issue view "$DEP" --json state --jq '.state' 2>/dev/null || echo "UNKNOWN")
+              STATE=$(gh api "repos/${REPO}/issues/${DEP}" --jq '.state' 2>/dev/null || echo "unknown")
               echo "Issue #${ISSUE_NUM}: blocker #${DEP} state=${STATE}"
-              if [ "$STATE" != "CLOSED" ]; then
+              # REST returns lowercase "closed"/"open".
+              if [ "$STATE" != "closed" ]; then
                 ALL_CLOSED=false
                 break
               fi
