@@ -225,7 +225,8 @@ dry-run до merge Autobot v2 в main.
 
 | Метка | Смысл |
 |---|---|
-| `claude-ready` | Opt-in оператора |
+| `claude-ready` | Opt-in оператора; задача готова к немедленному подхвату кодером |
+| `claude-queued` | Задача в цепочке — ждёт, пока закроются все блокирующие issues; драйвер сам переведёт в `claude-ready` |
 | `claude-in-progress` | Замок очереди (кодер работает) |
 | `needs-code-review` | PR готов к code review |
 | `code-changes-requested` | Ревьюер запросил правки |
@@ -233,8 +234,149 @@ dry-run до merge Autobot v2 в main.
 | `needs-product-review` | (зарезервировано, не используется в v2) |
 | `product-changes-requested` | Product-manager запросил правки docs |
 | `product-approved` | Product review пройден → merge |
-| `autobot-paused` | PR на паузе из-за лимита подписки; `claude-pr-resume` перезапустит флоу |
+| `autobot-paused` | Issue или PR на паузе из-за лимита подписки; `claude-pr-resume` перезапустит флоу |
 | `needs-human` | Автоматика остановилась, нужен оператор |
+
+> **Создание меток в репозитории:**
+> ```bash
+> gh label create "claude-queued" --color "BFD4F2" --description "Enrolled in an autobot chain — waiting for blockers to close"
+> ```
+> Метки `claude-ready`, `claude-in-progress`, `autobot-paused`, `needs-human` и стадийные метки PR уже созданы ранее.
+
+---
+
+## Autobot chain driver (issue #80)
+
+Цепочка задач — группа issues, связанных зависимостями «сначала #N, потом меня».
+Драйвер (`claude-chain-driver.yml`) управляет очередью автоматически: смотрит,
+какие блокирующие issues уже закрыты, и переводит следующую задачу из
+`claude-queued` → `claude-ready` ровно тогда, когда конвейер освободился.
+
+### Как объявить цепочку
+
+1. Создай каждую задачу как обычный issue.
+2. В тело каждой зависимой задачи добавь строку (одну или несколько):
+   ```
+   Blocked by #N
+   ```
+   Формат регистронезависимый; поддерживается несколько строк / несколько номеров на строке:
+   ```
+   Blocked by #42
+   Blocked by #43
+   ```
+3. Проставь метку `claude-queued` на все задачи цепочки.
+   **Не** ставь `claude-ready` вручную — это сделает драйвер.
+4. Если хочешь, чтобы какая-то задача ушла в работу первой (стартовая),
+   можешь поставить на неё `claude-ready` напрямую (без `claude-queued`).
+
+Пример цепочки из трёх задач:
+
+```
+#10 — базовая схема   → claude-queued, нет блокеров
+#11 — сервис          → claude-queued, Blocked by #10
+#12 — хэндлер         → claude-queued, Blocked by #11
+```
+
+Когда #10 смержится (issue закроется), драйвер переведёт #11 в `claude-ready`.
+Когда #11 смержится — переведёт #12.
+
+### Машина состояний (метки на issue)
+
+```
+[оператор ставит claude-queued]
+        │
+        │  (claude-chain-driver: все блокеры закрыты и конвейер свободен)
+        ▼
+[claude-ready]
+        │
+        │  (claude-issue / claude-sweeper)
+        ▼
+[claude-in-progress] → ... → PR merge → issue CLOSED
+```
+
+### Воркфлоу `claude-chain-driver.yml`
+
+| Параметр | Значение |
+|---|---|
+| Триггер | `issues: [closed]` (мгновенно) + `schedule: 0 */6 * * *` (раз в 6 часов) |
+| Исполнение | Чистый bash, никакого агента |
+| Токен | `AUTOMATION_TOKEN` (PAT) — нужен для каскада label-событий |
+| Таймаут | 10 минут |
+
+**Алгоритм:**
+
+1. **Guard** — ничего не делать, если конвейер занят:
+   - есть issue с `claude-ready` или `claude-in-progress`, **или**
+   - есть открытый PR с любой стадийной меткой (кроме `autobot-paused` / `needs-human`).
+2. **Поиск** — из всех `claude-queued` issues выбрать те, у которых все
+   `Blocked by #N` закрыты. Tie-break: **наименьший номер issue**.
+3. **Продвижение** — снять `claude-queued`, поставить `claude-ready`
+   (одно issue за раз). Label-add запускает `claude-issue.yml`.
+
+### Пауза на лимите подписки (coder stage)
+
+Расширение механизма PR #61 на стадию кодера:
+
+- После шага `claude-code-action` в `claude-issue.yml` и `claude-sweeper.yml`
+  читается `execution_file`. Если `is_error == true && subtype != "error_max_turns"` —
+  issue паркуется как `autobot-paused` (снимаются `claude-in-progress` и `claude-ready`).
+- `claude-pr-resume.yml` (крон ~5ч + `workflow_dispatch`) находит `autobot-paused` issues
+  и снимает паузу: убирает `autobot-paused`, возвращает `claude-ready` — кодер запустится
+  снова.
+- **Предохранитель:** счётчик `<!-- autobot:issue-pause-count -->` в комментариях issue.
+  После **5 пауз подряд** ставится `needs-human` вместо `autobot-paused`.
+- `error_max_turns` — настоящий «агент не уложился в лимит ходов» → `needs-human`
+  по обычному пути (не пауза).
+
+### DAG-зависимости
+
+Помимо линейных цепочек, поддерживается произвольный ориентированный граф (DAG):
+issue может иметь несколько блокеров. Он перейдёт в `claude-ready` только когда
+**все** его `Blocked by #N` будут закрыты.
+
+```
+#10 ──┐
+      ├──▶ #12 (Blocked by #10, Blocked by #11)
+#11 ──┘
+```
+
+Циклические зависимости не обнаруживаются автоматически (драйвер просто не найдёт
+eligible issue и остановится). Не создавай циклических зависимостей.
+
+### Dry-run (после merge в main)
+
+Label-triggered воркфлоу срабатывают только с HEAD main. Для теста цепочки:
+
+1. Создай два throwaway-issues: #A (без блокеров) и #B (`Blocked by #A`).
+2. Поставь `claude-queued` на оба.
+3. Проверь, что `claude-chain-driver` (Actions → Claude chain driver) при закрытии
+   #A переводит #B в `claude-ready` и кодер начинает работу.
+4. Убедись, что guard не продвигает #B, пока конвейер занят.
+5. **Регрессия многострочного тела (важно).** Создай throwaway-issue #C с
+   многострочным телом, где `Blocked by #N` стоит **не на первой строке**, а
+   ниже по тексту, например:
+
+   ```
+   Контекст задачи.
+   Ещё одна строка описания.
+
+   Blocked by #A
+   Заключительная строка.
+   ```
+
+   Поставь `claude-queued`. Закрой #A и убедись, что драйвер всё равно нашёл
+   зависимость `#A` и продвинул #C только после её закрытия (а не сразу при
+   постановке метки). Это страхует от регрессии, когда тело сериализовалось
+   с буквальными переносами строк и блокер на не-первой строке терялся.
+
+### Пауза на лимите подписки (таблица маркеров)
+
+| Маркер | Место | Назначение |
+|---|---|---|
+| `<!-- autobot:issue-pause-count -->` | комментарий на issue | Счётчик пауз кодера; ≥ 5 → `needs-human` |
+| `<!-- autobot:pause-count -->` | комментарий на PR | Счётчик пауз PR-стадий; ≥ 3 → `needs-human` |
+| `<!-- autobot:code-fix-round -->` | комментарий на PR | Счётчик раундов code-fix; ≥ 5 → `needs-human` |
+| `<!-- autobot:product-fix-round -->` | комментарий на PR | Счётчик раундов product-fix; ≥ 5 → `needs-human` |
 
 ---
 

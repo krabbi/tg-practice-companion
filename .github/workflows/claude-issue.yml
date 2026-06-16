@@ -131,10 +131,61 @@ jobs:
             --allowedTools "Bash,Edit,Write,Read,Glob,Grep,MultiEdit"
             --disallowedTools "Bash(gh pr merge:*),Bash(gh pr close:*),Bash(gh issue close:*),Bash(gh pr review:*),Bash(gh pr comment:*)"
 
+      # Coder-stage subscription-limit guard.
+      # claude-code-action swallows is_error and reports the GH step as
+      # success. On a cap-exhausted degenerate run (returns in <1s,
+      # is_error=true, num_turns<=1, subtype reported as "success") the
+      # subsequent "Verify PR was created" step would find no PR and escalate
+      # to needs-human — burying what is actually a transient limit hit.
+      # Detect it here: if is_error==true and subtype != error_max_turns,
+      # park the issue as autobot-paused and release the queue lock.
+      # claude-pr-resume.yml (or the chain-driver cron) will re-add
+      # claude-ready once the subscription window resets.
+      # error_max_turns = genuine "agent ran out of turns" → keep needs-human.
+      # A consecutive-pause counter (<!-- autobot:issue-pause-count -->) stops
+      # infinite pausing: after N=5 pauses in a row, escalate to needs-human.
+      - name: Pause on coder subscription-limit exhaustion
+        id: issuelimitcheck
+        env:
+          GH_TOKEN: ${{ secrets.AUTOMATION_TOKEN }}
+        run: |
+          ISSUE_NUMBER="${{ github.event.issue.number }}"
+          FILE="${{ steps.claude.outputs.execution_file }}"
+          if [ -z "$FILE" ] || [ ! -f "$FILE" ]; then
+            FILE="${RUNNER_TEMP}/claude-execution-output.json"
+          fi
+          IS_ERROR=""; SUBTYPE=""
+          if [ -f "$FILE" ]; then
+            IS_ERROR=$(jq -rs 'flatten | map(select(.type=="result")) | last | .is_error // empty' "$FILE" 2>/dev/null || true)
+            SUBTYPE=$(jq -rs 'flatten | map(select(.type=="result")) | last | .subtype // empty' "$FILE" 2>/dev/null || true)
+          fi
+          echo "execution result: is_error=${IS_ERROR:-?} subtype=${SUBTYPE:-?}"
+          if [ "$IS_ERROR" = "true" ] && [ "$SUBTYPE" != "error_max_turns" ]; then
+            PAUSES=$(gh issue view "$ISSUE_NUMBER" --json comments \
+              --jq '[.comments[].body | select(contains("<!-- autobot:issue-pause-count -->"))] | length' 2>/dev/null || echo 0)
+            if [ "${PAUSES:-0}" -ge 5 ]; then
+              gh issue comment "$ISSUE_NUMBER" --body "[AUTOBOT] Coder paused ${PAUSES}× on agent errors — not a transient subscription-limit hit. Setting needs-human."
+              gh issue edit "$ISSUE_NUMBER" \
+                --remove-label "claude-in-progress" \
+                --remove-label "autobot-paused" || true
+              gh issue edit "$ISSUE_NUMBER" --add-label "needs-human"
+            else
+              gh issue comment "$ISSUE_NUMBER" --body "[AUTOBOT] Coder agent returned is_error with no usable result (subtype=${SUBTYPE:-none}) — most likely the Claude subscription 5-hour limit is exhausted. Parking issue as autobot-paused; automation will re-add claude-ready once the limit resets. <!-- autobot:issue-pause-count -->"
+              gh issue edit "$ISSUE_NUMBER" \
+                --remove-label "claude-in-progress" \
+                --remove-label "claude-ready" || true
+              gh issue edit "$ISSUE_NUMBER" --add-label "autobot-paused"
+            fi
+            echo "issue_paused=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "issue_paused=false" >> "$GITHUB_OUTPUT"
+          fi
+
       # Post-agent verification: find the PR opened for this issue.
       # conclusion:success on the action does NOT mean the agent succeeded —
       # the action swallows is_error. We verify by checking a real artifact.
       - name: Verify PR was created
+        if: steps.issuelimitcheck.outputs.issue_paused != 'true'
         env:
           GH_TOKEN: ${{ secrets.AUTOMATION_TOKEN }}
         run: |
