@@ -189,6 +189,33 @@
 Все запросы к `/api/practices` требуют заголовка `Authorization: Bearer <token>`.
 Токен получается через `POST /api/auth/telegram` (TMA initData) и действует 24 часа.
 
+### Получение списка практик — GET /api/practices
+
+Возвращает массив всех практик. Для фильтрации по статусу используется необязательный
+параметр `active`:
+
+```
+GET /api/practices           # все практики
+GET /api/practices?active=true   # только активные
+GET /api/practices?active=false  # только неактивные
+```
+
+Ответ — массив объектов практик, каждый из которых содержит поля `id` (UUID), `name`,
+`content_type`, `content`, `media_asset_id`, `periodicity_type`, `interval_hours`,
+`schedule_times`, `anchor_hour`, `anchor_minute`, `active`, `start_date`, `end_date`,
+`sort_order`, `created_at`, `updated_at`.
+
+Поле `id` используется в PATCH и DELETE запросах.
+
+### Получение практики по ID — GET /api/practices/{id}
+
+Возвращает одну практику по её UUID. Если практика с указанным `id` не найдена,
+API вернёт 404.
+
+```
+GET /api/practices/3fa85f64-5717-4562-b3fc-2c963f66afa6
+```
+
 ### Создание практики — POST /api/practices
 
 ```json
