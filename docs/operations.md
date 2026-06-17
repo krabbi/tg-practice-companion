@@ -419,6 +419,95 @@ authentication works identically.
 
 ---
 
+## Web admin deploy (Stage 2, AC-19)
+
+The web admin runs as two Docker Compose services under the `web` profile:
+
+| Service | Role |
+|---|---|
+| `web` | FastAPI/uvicorn — business logic and REST API on internal port `WEB_PORT` (default 8000) |
+| `nginx` | Serves the built Vue SPA and proxies `/api/*` → `web:8000`; exposed on `NGINX_PORT` (default 4100) |
+
+The host-level reverse proxy (e.g. Caddy or nginx on the host) maps the admin domain →
+`127.0.0.1:4100` and handles TLS.  TMA requires a public HTTPS URL — the host proxy provides it.
+
+### First-time web admin deploy
+
+**Prerequisites:** Docker + Docker Compose v2, Node 20 (to build the SPA), the bot already
+running (`--profile bot`), `.env` with all required secrets.
+
+```bash
+# 1. Generate JWT_SECRET (keep it secret — never commit to git)
+openssl rand -hex 32
+
+# 2. Edit .env — fill in the web admin variables:
+#   JWT_SECRET=<generated above>
+#   CORS_ORIGINS=https://admin.yourdomain.example.com
+#   NGINX_PORT=4100
+#   WEB_APP_URL=https://admin.yourdomain.example.com
+#   MEDIA_STORAGE_DIR=/data/media   # default; matches the Docker volume mount
+
+# 3. Build the Vue SPA (produces frontend/dist/)
+cd frontend && npm ci && npm run build && cd ..
+
+# 4. Map the admin domain on the host reverse proxy to 127.0.0.1:4100
+#    (see your host proxy documentation — Caddy example below)
+
+# 5. Start web profile (nginx + web + db)
+docker compose --profile web up -d
+
+# 6. Check logs
+docker compose logs web --tail 30
+docker compose logs nginx --tail 30
+```
+
+**Caddy example** (add to `/etc/caddy/Caddyfile` on the host):
+
+```caddyfile
+admin.yourdomain.example.com {
+    reverse_proxy 127.0.0.1:4100
+}
+```
+
+After Caddy reloads, the SPA is available at `https://admin.yourdomain.example.com`.
+
+### Register the admin as a Telegram Mini App
+
+Once the HTTPS URL is live, register it with BotFather so the `/admin` command and Menu
+Button work:
+
+1. Open `@BotFather` → `/mybots` → select your bot → **Bot Settings** → **Menu Button**.
+2. Set **Edit menu button URL** to the HTTPS admin URL (same as `WEB_APP_URL`).
+3. Set `WEB_APP_URL` in `.env` to the same HTTPS URL and restart the bot:
+
+```bash
+docker compose --profile bot restart bot
+```
+
+The `/admin` command now opens the Mini App directly inside Telegram.
+
+### Updating the SPA after a frontend change
+
+```bash
+cd frontend && npm run build && cd ..
+docker compose --profile web restart nginx
+```
+
+The new `frontend/dist/` files are picked up on nginx restart (bind-mounted from the host).
+
+### Environment variable reference — web profile
+
+| Variable | Required | Default | Notes |
+|---|---|---|---|
+| `JWT_SECRET` | yes | — | Random hex string; generate with `openssl rand -hex 32` |
+| `CORS_ORIGINS` | no | `""` | Comma-separated HTTPS origins allowed by the API |
+| `WEB_PORT` | no | `8000` | Internal uvicorn port (used only inside Docker network) |
+| `NGINX_PORT` | no | `4100` | Host port nginx listens on; host proxy maps domain → this |
+| `WEB_APP_URL` | no | `""` | HTTPS URL of the deployed SPA; required for `/admin` TMA button |
+| `MEDIA_STORAGE_DIR` | no | `/data/media` | Path inside the container where media files are stored |
+
+---
+
 ## Send-window boundary convention (M1)
 
 The scheduler tick enforces a **half-open interval `[send_window_start, send_window_end)`**

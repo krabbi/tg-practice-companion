@@ -1,6 +1,15 @@
 # syntax=docker/dockerfile:1
-# Multi-stage build: base → dev (watches) / prod (slim run)
+# Multi-stage build: frontend-builder / base → dev (watches) / prod (slim run)
 ARG PYTHON_VERSION=3.11
+
+# ── frontend-builder ──────────────────────────────────────────────────────────
+FROM node:20-alpine AS frontend-builder
+
+WORKDIR /app
+COPY frontend/package.json frontend/package-lock.json ./
+RUN npm ci
+COPY frontend/ .
+RUN npm run build
 
 # ── base ──────────────────────────────────────────────────────────────────────
 FROM python:${PYTHON_VERSION}-slim AS base
