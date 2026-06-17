@@ -70,6 +70,53 @@ jobs:
         # bootstrap tree; anything else (e.g. ImportError = 2) must fail.
         run: pytest --collect-only || { code=$?; [ "$code" -eq 5 ] || exit "$code"; }
 
+  # Frontend gate for the Vue 3 + Vite SPA in `frontend/`.
+  # The JOB always runs so a check named `frontend` always exists (the merge gate
+  # in claude-pr-merge.yml keys off check names); the real steps activate only once
+  # `frontend/package.json` lands — mirroring the bot-module bootstrap skip above.
+  # Contract: `package.json` MUST define `typecheck`, `test` (Vitest), and `build`
+  # (frontend tests are mandatory, but there is NO numeric coverage gate — the
+  # pr-reviewer judges test adequacy). `lint` (ESLint) is recommended; it runs
+  # with `--if-present` so a missing lint script does not break CI.
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Detect frontend
+        id: fe
+        run: |
+          if [ -f frontend/package.json ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/setup-node@v4
+        if: steps.fe.outputs.present == 'true'
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install
+        if: steps.fe.outputs.present == 'true'
+        working-directory: frontend
+        run: npm ci
+      - name: Lint
+        if: steps.fe.outputs.present == 'true'
+        working-directory: frontend
+        run: npm run lint --if-present
+      - name: Typecheck
+        if: steps.fe.outputs.present == 'true'
+        working-directory: frontend
+        run: npm run typecheck
+      - name: Unit tests
+        if: steps.fe.outputs.present == 'true'
+        working-directory: frontend
+        run: npm test
+      - name: Build
+        if: steps.fe.outputs.present == 'true'
+        working-directory: frontend
+        run: npm run build
+
   build-push:
     runs-on: ubuntu-latest
     # Only build and push on pushes to main (not on PRs from forks — no registry access)

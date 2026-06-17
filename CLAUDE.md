@@ -14,7 +14,8 @@ into a long-term journal with a "does this thought lead to my goals" self-assess
 a supportive AI analysis of yesterday every morning.
 
 **Stack:** Python 3.11+, aiogram 3.x, SQLAlchemy async + Alembic, APScheduler,
-Anthropic API (Haiku-class), Groq Whisper API, Docker Compose.
+Anthropic API (Haiku-class), Groq Whisper API, Docker Compose. Web admin SPA:
+Vue 3 + Vite + TypeScript (vue-router, Pinia) in `frontend/`.
 
 **Core abstraction:** a **Practice** is data, code is the engine. A practice row defines
 content type (question / text / audio / image), content or media ref, cadence, and lifetime.
@@ -158,6 +159,8 @@ bot/            # entry point, config, db, i18n, middleware, scheduler
   repositories/ # DB access
   models/       # SQLAlchemy models
   middlewares/  # auth whitelist
+web/            # FastAPI web-admin backend (app factory, routers, auth, deps)
+frontend/       # Vue 3 + Vite + TS web-admin SPA (src/api, src/stores, views)
 cli/            # operator seeding commands
 alembic/        # migrations
 content/        # operator-loaded practice content (YAML)
@@ -165,3 +168,8 @@ tests/          # unit/ + integration/, conftest.py
 docs/           # user_guide.md, architecture.md, operations.md
 .claude/        # agents/, commands/, coding-patterns.md, testing-guide.md, orchestration.md
 ```
+
+**Frontend (`frontend/`) gates:** `typecheck`, `test` (Vitest), and `build` are mandatory and run
+in CI (job `frontend`); `lint` (ESLint) is recommended. Frontend unit tests are **required**, but
+the SPA has **no numeric coverage gate** — the per-file ≥80% gate is Python-only; the pr-reviewer
+judges whether frontend tests are adequate.
