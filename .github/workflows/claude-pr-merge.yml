@@ -85,7 +85,7 @@ jobs:
 
             if ! PENDING=$(GH_TOKEN="${{ github.token }}" gh api \
                   "repos/${{ github.repository }}/commits/${HEAD_SHA}/check-runs?per_page=100" \
-                  --jq '[.check_runs[]? | select(.name == "lint" or .name == "test") | select(.status == "queued" or .status == "in_progress")] | length' \
+                  --jq '[.check_runs[]? | select(.name == "lint" or .name == "test" or .name == "frontend") | select(.status == "queued" or .status == "in_progress")] | length' \
                   2>/dev/null); then
               API_FAILURES=$((API_FAILURES + 1))
               echo "Poll ${POLL}/${MAX_POLLS}: check-runs API call failed (${API_FAILURES} so far), retrying..."
@@ -132,9 +132,11 @@ jobs:
 
           LINT_CONCLUSION=$(printf '%s' "$CHECK_JSON" | jq -r 'first(.check_runs[]? | select(.name == "lint") | .conclusion) // ""')
           TEST_CONCLUSION=$(printf '%s' "$CHECK_JSON" | jq -r 'first(.check_runs[]? | select(.name == "test") | .conclusion) // ""')
+          FRONTEND_CONCLUSION=$(printf '%s' "$CHECK_JSON" | jq -r 'first(.check_runs[]? | select(.name == "frontend") | .conclusion) // ""')
 
           echo "lint conclusion: ${LINT_CONCLUSION}"
           echo "test conclusion: ${TEST_CONCLUSION}"
+          echo "frontend conclusion: ${FRONTEND_CONCLUSION:-<absent>}"
 
           FAILED=false
 
@@ -145,6 +147,14 @@ jobs:
 
           if [ "$TEST_CONCLUSION" != "success" ] && [ "$TEST_CONCLUSION" != "skipped" ] && [ "$TEST_CONCLUSION" != "neutral" ]; then
             echo "FAIL: test check conclusion is '${TEST_CONCLUSION}' (required: success)"
+            FAILED=true
+          fi
+
+          # Frontend gate is non-blocking when ABSENT (PRs predating the SPA or this
+          # gate carry no `frontend` check). When present, only a real failure blocks;
+          # skipped (no frontend/ in the tree yet) / neutral / success all pass.
+          if [ -n "$FRONTEND_CONCLUSION" ] && [ "$FRONTEND_CONCLUSION" != "success" ] && [ "$FRONTEND_CONCLUSION" != "skipped" ] && [ "$FRONTEND_CONCLUSION" != "neutral" ]; then
+            echo "FAIL: frontend check conclusion is '${FRONTEND_CONCLUSION}' (required: success)"
             FAILED=true
           fi
 
