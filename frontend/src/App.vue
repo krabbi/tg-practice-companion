@@ -11,6 +11,9 @@ const authStore = useAuthStore()
 const router = useRouter()
 
 onMounted(async () => {
+  window.Telegram?.WebApp?.ready()
+  window.Telegram?.WebApp?.expand()
+
   if (authStore.isAuthenticated) {
     appState.value = 'ready'
     return
@@ -24,8 +27,6 @@ onMounted(async () => {
   }
 
   try {
-    window.Telegram!.WebApp.ready()
-    window.Telegram!.WebApp.expand()
     await authStore.login(initData)
     appState.value = 'ready'
     await router.push('/practices')

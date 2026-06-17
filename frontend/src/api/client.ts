@@ -27,8 +27,9 @@ export async function apiFetch<T>(path: string, options: RequestInit = {}): Prom
   const response = await fetch(`${API_BASE}${path}`, { ...options, headers })
 
   if (response.status === 401) {
-    localStorage.removeItem('auth_token')
-    // Dynamic import to avoid circular dependency at module init time
+    // Dynamic imports avoid circular deps at module init time (same pattern as router)
+    const { useAuthStore } = await import('@/stores/auth')
+    useAuthStore().logout()
     const { default: router } = await import('@/router')
     await router.push('/')
     throw new ApiError(401, 'Unauthorized')

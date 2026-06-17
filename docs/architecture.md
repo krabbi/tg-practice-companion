@@ -414,6 +414,14 @@ All fields are loaded from environment variables (or `.env` file) via `pydantic-
 | `cors_origins` | `CORS_ORIGINS` | `list[str]` | `[]` | Stage-2 stub; unused in Stage 1 |
 | `media_storage_dir` | `MEDIA_STORAGE_DIR` | `str` | `"/data/media"` | Filesystem path for uploaded audio/image files (B4); mount as a volume in production |
 
+## Frontend config (SPA build-time)
+
+| Field | Env var | Type | Default | Notes |
+|---|---|---|---|---|
+| *(build-time)* | `VITE_API_BASE_URL` | `string` | `""` (same origin) | Base URL for the web API; set to an absolute URL when the SPA is served from a different origin than the API |
+
+---
+
 ## Web API (Stage 2)
 
 The `web/` package is a FastAPI companion service that shares the bot's Postgres database.
