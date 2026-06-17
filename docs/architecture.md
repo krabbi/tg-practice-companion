@@ -325,6 +325,8 @@ The journal catch-all carries `StateFilter(None)` so it yields whenever an FSM s
 | `AnalysisService` | `bot/services/analysis_service.py` | Build the once-daily morning AI analysis: query stats, enforce cost guardrail, call LLM with supportive AC-13 prompt, persist `DailyAiAnalysis` row (AC-11, AC-16) |
 | `BlessingService` | `bot/services/blessing_service.py` | Select today's morning blessing by date-derived round-robin (`today.toordinal() % count`); idempotent for the same date (AC-3) |
 | `WantListService` | `bot/services/want_list_service.py` | Add want-list items (`add`), list active (undone) items (`list_active`), pick a random undone item (`random_active`) |
+| `WantAdminService` | `bot/services/want_admin_service.py` | Web admin CRUD for want-list items: `list_for_user`, `create`, `update(id, *, text, done)`, `delete`; owns commit |
+| `BlessingAdminService` | `bot/services/blessing_admin_service.py` | Web admin CRUD + reorder for morning blessings: `list_all`, `create` (auto-appends rotation_order), `update(id, *, text, active)`, `delete`, `reorder(ids)` (validates completeness); owns commit |
 | `GoodDeedService` | `bot/services/good_deed_service.py` | Insert a free-text `GoodDeed` row for the local calendar date; atomically consumes the associated `good_deeds` pending_prompt (AC-10) |
 | `ReportService` | `bot/services/report_service.py` | Aggregate journal stats, practice-send counts, and good deeds over a date range into a plain-text report (AC-12); no LLM |
 
@@ -339,11 +341,11 @@ The journal catch-all carries `StateFilter(None)` so it yields whenever an FSM s
 | `PendingPromptRepository` | `bot/repositories/pending_prompt_repository.py` | `create`, `get_by_telegram_message_id`, `newest_unconsumed`, `mark_consumed`, `mark_clarify_sent` |
 | `JournalRepository` | `bot/repositories/journal_repository.py` | `create`, `get_by_id`, `get_by_id_with_details(entry_id)` → `JournalEntryRow \| None` (joined with Practice name + SelfAssessment), `list_paginated(user_id, *, page, page_size, date_from, date_to, practice_id)` → `(list[JournalEntryRow], int)`, `daily_stats(user_id, date)` → `DailyStats(n_total, n_leads)`, `period_stats(user_id, start, end)` → `PeriodStats(n_total, n_leads)` |
 | `SelfAssessmentRepository` | `bot/repositories/self_assessment_repository.py` | `create`, `get_by_entry_id` |
-| `BlessingRepository` | `bot/repositories/blessing_repository.py` | `save`, `get_by_id`, `get_active_ordered` |
+| `BlessingRepository` | `bot/repositories/blessing_repository.py` | `save`, `get_by_id`, `get_active_ordered`, `get_by_rotation_order`, `list_all`, `create`, `update(id, *, text, active)`, `delete(id)`, `reorder(ids)` (two-pass to preserve `uq_morning_blessings_rotation_order`) |
 | `ImageRepository` | `bot/repositories/image_repository.py` | `save`, `get_by_id`, `get_active` |
 | `AnalysisRepository` | `bot/repositories/analysis_repository.py` | `save`, `get_by_id`, `get_by_user_and_date` |
 | `ApiUsageRepository` | `bot/repositories/api_usage_repository.py` | `save`, `get_by_id`, `sum_cost_since` |
-| `WantListRepository` | `bot/repositories/want_list_repository.py` | `create` (insert item), `get_by_id`, `list_for_user` (all items for a user, oldest first), `mark_done`, `delete` |
+| `WantListRepository` | `bot/repositories/want_list_repository.py` | `create` (insert item), `get_by_id`, `list_for_user` (all items for a user, oldest first), `mark_done`, `update(id, *, text, done)`, `delete` |
 | `GoodDeedRepository` | `bot/repositories/good_deed_repository.py` | `create`, `get_by_id`, `list_by_date`, `list_by_date_range`, `delete` |
 
 ## Scheduler (M1)
@@ -478,6 +480,15 @@ The module is import-free of FastAPI — pure functions, fully unit-testable.
 | `GET` | `/api/media` | Bearer JWT | List all media assets; optional `?kind=audio\|image` filter |
 | `DELETE` | `/api/media/{id}` | Bearer JWT | Delete media asset row and file on disk; 204; 404 if not found |
 | `POST` | `/api/motivational-images` | Bearer JWT | Add a `MediaAsset` (kind=image) to the motivational-image pool; 201 `MotivationalImageResponse`; 400 if asset not found or wrong kind |
+| `GET` | `/api/wants` | Bearer JWT | List all want-list items for the authenticated user (oldest first) |
+| `POST` | `/api/wants` | Bearer JWT | Create a want-list item; 201 `WantResponse`; 422 if text is empty |
+| `PATCH` | `/api/wants/{id}` | Bearer JWT | Update text and/or done; 200 `WantResponse`; 404 if not found |
+| `DELETE` | `/api/wants/{id}` | Bearer JWT | Delete a want-list item; 204; 404 if not found |
+| `GET` | `/api/blessings` | Bearer JWT | List all morning blessings ordered by rotation_order |
+| `POST` | `/api/blessings` | Bearer JWT | Create a blessing appended to the rotation order; 201 `BlessingResponse`; 422 if text is empty |
+| `PATCH` | `/api/blessings/{id}` | Bearer JWT | Update text and/or active; 200 `BlessingResponse`; 404 if not found |
+| `DELETE` | `/api/blessings/{id}` | Bearer JWT | Delete a blessing; 204; 404 if not found |
+| `POST` | `/api/blessings/reorder` | Bearer JWT | Reassign rotation_order 1..N; body `{"ids": [...]}` must include every existing blessing ID; 200 `list[BlessingResponse]`; 400 if any ID missing or unknown |
 
 ### Docker Compose service
 
