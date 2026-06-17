@@ -73,6 +73,9 @@ _RU: dict[str, str] = {
     "report_good_deeds_header": "Добрые дела:",
     "report_good_deeds_empty": "Добрых дел за период не записано.",
     "report_practices_header": "Практики отправлены: {n}",
+    # /admin command (AC-19)
+    "admin_open_button": "Открыть панель администратора",
+    "admin_not_configured": "Веб-панель администратора не настроена (WEB_APP_URL не задан).",
 }
 
 # English strings — complete canonical set; used when lang == "en" or as fallback.
@@ -145,6 +148,9 @@ _EN: dict[str, str] = {
     "report_good_deeds_header": "Good deeds:",
     "report_good_deeds_empty": "No good deeds recorded for this period.",
     "report_practices_header": "Practices sent: {n}",
+    # /admin command (AC-19)
+    "admin_open_button": "Open admin panel",
+    "admin_not_configured": "The admin web panel is not configured (WEB_APP_URL is not set).",
 }
 
 _STRINGS: dict[str, dict[str, str]] = {"ru": _RU, "en": _EN}

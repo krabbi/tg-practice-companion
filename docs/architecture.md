@@ -299,7 +299,8 @@ Router registration order is load-bearing (issue #4 Decision B1). Canonical orde
 5. `want_list.router` — `/want`, `/wants` commands (added M4.2)
 6. `reports.router` — `/report` command, period callbacks, custom-dates FSM (M5)
 7. `good_deeds.router` — good-deed capture reply handler (added M4.3)
-8. `journal.router` — `F.text` / `F.voice` catch-all with `StateFilter(None)` (last)
+8. `admin.router` — `/admin` command to open the web admin Mini App (AC-19); must precede journal catch-all
+9. `journal.router` — `F.text` / `F.voice` catch-all with `StateFilter(None)` (last)
 
 The journal catch-all carries `StateFilter(None)` so it yields whenever an FSM state is active (e.g. `TimezoneSetupStates` or `ReportStates`).
 
@@ -413,6 +414,7 @@ All fields are loaded from environment variables (or `.env` file) via `pydantic-
 | `jwt_secret` | `JWT_SECRET` | `str` | `""` | Stage-2 stub; unused in Stage 1 |
 | `cors_origins` | `CORS_ORIGINS` | `list[str]` | `[]` | Stage-2 stub; unused in Stage 1 |
 | `media_storage_dir` | `MEDIA_STORAGE_DIR` | `str` | `"/data/media"` | Filesystem path for uploaded audio/image files (B4); mount as a volume in production |
+| `web_app_url` | `WEB_APP_URL` | `str` | `""` | HTTPS URL of the deployed web admin SPA (AC-19); empty string disables the `/admin` command |
 
 ## Frontend config (SPA build-time)
 
