@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from bot.config import Config
 from bot.handlers import (
+    admin,
     assessment,
     commands,
     good_deeds,
@@ -62,7 +63,9 @@ def create_dispatcher(
     dp.include_router(reports.create_router())
     # 5. good_deeds router runs before journal so its filter can intercept good_deeds prompts
     dp.include_router(good_deeds.create_router())
-    # 6. journal F.text / F.voice catch-all LAST (StateFilter(None) yields to FSM)
+    # 6. admin router — /admin command; must precede journal catch-all (AC-19)
+    dp.include_router(admin.create_router(config))
+    # 7. journal F.text / F.voice catch-all LAST (StateFilter(None) yields to FSM)
     dp.include_router(journal.create_router())
 
     return dp

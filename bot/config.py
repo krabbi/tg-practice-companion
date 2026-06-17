@@ -47,6 +47,9 @@ class Config(BaseSettings):
     # Media storage — path on disk where uploaded audio/images are persisted (B4)
     media_storage_dir: str = "/data/media"
 
+    # Web admin Mini App URL (AC-19); empty string disables the /admin command
+    web_app_url: str = ""
+
     @field_validator("allowed_user_ids", mode="before")
     @classmethod
     def parse_csv_ids(cls, v: Any) -> list[int]:

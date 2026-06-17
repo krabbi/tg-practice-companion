@@ -392,6 +392,33 @@ Label-triggered воркфлоу срабатывают только с HEAD mai
 
 ---
 
+## Web admin entry points (AC-19)
+
+### `/admin` command
+
+The bot exposes a `/admin` command that replies with an inline Web App button opening
+the admin TMA directly inside Telegram.  It requires `WEB_APP_URL` to be set in the
+bot's environment; when the variable is empty the bot replies with a localised
+"not configured" message instead.
+
+### BotFather persistent Menu Button (alternative launch surface)
+
+As an alternative (or complement) to the `/admin` command, BotFather lets you pin a
+persistent **Menu Button** that always opens the Mini App — visible at the bottom left of
+the chat input bar.  To configure it:
+
+1. Open `@BotFather` in Telegram and send `/mybots`.
+2. Select your bot → **Bot Settings** → **Menu Button**.
+3. Choose **Edit menu button URL** and paste the HTTPS URL of the deployed SPA (same
+   value as `WEB_APP_URL`).
+4. The button label defaults to "Menu" — change it with **Edit menu button text** if
+   desired.
+
+The persistent button provides `initData` just like the `/admin` inline button, so TMA
+authentication works identically.
+
+---
+
 ## Send-window boundary convention (M1)
 
 The scheduler tick enforces a **half-open interval `[send_window_start, send_window_end)`**

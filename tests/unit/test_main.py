@@ -50,23 +50,26 @@ def test_router_registration_order(dispatcher) -> None:  # type: ignore[no-untyp
       2. (timezone_setup FSM slot reserved for M5 — not yet wired)
       3. assessment    — callback + command router
       4. skip_day      — command/callback router
-      5. journal       — F.text/F.voice catch-all, StateFilter(None), MUST be last
+      5. admin         — /admin command; must precede journal catch-all (AC-19)
+      6. journal       — F.text/F.voice catch-all, StateFilter(None), MUST be last
     """
     registered_names = [r.name for r in dispatcher.sub_routers]
 
-    # All four currently-wired routers must be present
-    for name in ("commands", "assessment", "skip_day", "journal"):
+    # All currently-wired routers must be present
+    for name in ("commands", "assessment", "skip_day", "admin", "journal"):
         assert name in registered_names, f"Router '{name}' missing from dispatcher"
 
     # Verify strict index order
     idx_commands = registered_names.index("commands")
     idx_assessment = registered_names.index("assessment")
     idx_skip_day = registered_names.index("skip_day")
+    idx_admin = registered_names.index("admin")
     idx_journal = registered_names.index("journal")
 
     assert idx_commands < idx_assessment, "commands must come before assessment"
     assert idx_assessment < idx_skip_day, "assessment must come before skip_day"
-    assert idx_skip_day < idx_journal, "skip_day must come before journal"
+    assert idx_skip_day < idx_admin, "skip_day must come before admin"
+    assert idx_admin < idx_journal, "admin must come before journal"
 
     # journal must be strictly last among all registered routers
     assert idx_journal == len(registered_names) - 1, "journal router must be last"

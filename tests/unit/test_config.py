@@ -120,3 +120,15 @@ def test_cors_origins_list_passthrough() -> None:
     """cors_origins accepts an already-parsed list."""
     cfg = make_config(cors_origins=["https://x.io"])
     assert cfg.cors_origins == ["https://x.io"]
+
+
+def test_web_app_url_defaults_empty() -> None:
+    """web_app_url defaults to empty string when omitted."""
+    cfg = make_config()
+    assert cfg.web_app_url == ""
+
+
+def test_web_app_url_passthrough() -> None:
+    """web_app_url accepts an HTTPS URL string."""
+    cfg = make_config(web_app_url="https://admin.example.com")
+    assert cfg.web_app_url == "https://admin.example.com"
