@@ -256,6 +256,73 @@ GET /api/practices/3fa85f64-5717-4562-b3fc-2c963f66afa6
 | `good_deeds` | вечерний вопрос о добром деле |
 | `motivational_image` | случайная картинка из пула |
 
+## Просмотр дневника через веб-API (AC-21)
+
+Оператор может просматривать записи дневника и сводные отчёты через read-only REST API.
+
+### Аутентификация
+
+Все запросы к `/api/journal` и `/api/reports` требуют заголовка `Authorization: Bearer <token>`.
+Токен получается через `POST /api/auth/telegram` (TMA initData) и действует 24 часа (см. раздел «Управление практиками через веб-API»).
+
+### Список записей дневника — GET /api/journal
+
+Возвращает постранично записи дневника с фильтрацией по дате и практике.
+
+```
+GET /api/journal                                           # первые 20 записей
+GET /api/journal?page=2&page_size=10                       # страница 2
+GET /api/journal?date_from=2026-06-01&date_to=2026-06-30  # записи за июнь
+GET /api/journal?practice_id=<uuid>                        # записи по практике
+```
+
+Ответ:
+```json
+{
+  "items": [
+    {
+      "id": "...",
+      "text": "...",
+      "source": "text",
+      "created_at": "2026-06-01T09:00:00Z",
+      "practice_id": "...",
+      "practice_name": "Утренний вопрос",
+      "self_assessment": { "leads_to_goals": true, "set_via": "button" }
+    }
+  ],
+  "total": 42,
+  "page": 1,
+  "page_size": 20
+}
+```
+
+Параметры: `page` (≥1, default 1), `page_size` (1–200, default 20), `date_from` (ГГГГ-ММ-ДД), `date_to` (ГГГГ-ММ-ДД), `practice_id` (UUID). Записи возвращаются в порядке убывания даты.
+
+### Запись дневника по ID — GET /api/journal/{id}
+
+Возвращает одну запись со всеми полями, включая название практики и самооценку. 404 если не найдена.
+
+### Отчёт за период — GET /api/reports
+
+```
+GET /api/reports?date_from=2026-06-01&date_to=2026-06-30
+```
+
+Возвращает агрегированную статистику за период (обязательны оба параметра):
+
+```json
+{
+  "date_from": "2026-06-01",
+  "date_to": "2026-06-30",
+  "n_total": 42,
+  "n_leads": 28,
+  "n_practices": 60,
+  "n_good_deeds": 15
+}
+```
+
+Только текст/JSON — без графиков (non-goal в README).
+
 ## Команды — сводка
 
 | Команда | Что делает |

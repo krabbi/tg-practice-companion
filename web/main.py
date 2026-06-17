@@ -9,8 +9,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from bot.config import Config
 from bot.db import build_session_factory
 from web.routers.auth import router as auth_router
+from web.routers.journal import router as journal_router
 from web.routers.media import media_router, motivational_router
 from web.routers.practices import router as practices_router
+from web.routers.reports import router as reports_router
 
 
 def create_app(config: Config | None = None) -> FastAPI:
@@ -69,6 +71,8 @@ def create_app(config: Config | None = None) -> FastAPI:
 
     app.include_router(auth_router)
     app.include_router(practices_router)
+    app.include_router(journal_router)
+    app.include_router(reports_router)
     app.include_router(media_router)
     app.include_router(motivational_router)
 

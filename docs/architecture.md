@@ -337,7 +337,7 @@ The journal catch-all carries `StateFilter(None)` so it yields whenever an FSM s
 | `MediaAssetRepository` | `bot/repositories/media_asset_repository.py` | `create`, `list_all(kind)`, `get(id)`, `delete(id)` — dedicated CRUD for `MediaAsset` rows used by the web admin upload flow |
 | `PracticeSendRepository` | `bot/repositories/practice_send_repository.py` | `try_claim` (insert-or-skip), `count_in_period(user_id, start, end)`, `prune_older_than` |
 | `PendingPromptRepository` | `bot/repositories/pending_prompt_repository.py` | `create`, `get_by_telegram_message_id`, `newest_unconsumed`, `mark_consumed`, `mark_clarify_sent` |
-| `JournalRepository` | `bot/repositories/journal_repository.py` | `create`, `get_by_id`, `daily_stats(user_id, date)` → `DailyStats(n_total, n_leads)`, `period_stats(user_id, start, end)` → `PeriodStats(n_total, n_leads)` |
+| `JournalRepository` | `bot/repositories/journal_repository.py` | `create`, `get_by_id`, `get_by_id_with_details(entry_id)` → `JournalEntryRow \| None` (joined with Practice name + SelfAssessment), `list_paginated(user_id, *, page, page_size, date_from, date_to, practice_id)` → `(list[JournalEntryRow], int)`, `daily_stats(user_id, date)` → `DailyStats(n_total, n_leads)`, `period_stats(user_id, start, end)` → `PeriodStats(n_total, n_leads)` |
 | `SelfAssessmentRepository` | `bot/repositories/self_assessment_repository.py` | `create`, `get_by_entry_id` |
 | `BlessingRepository` | `bot/repositories/blessing_repository.py` | `save`, `get_by_id`, `get_active_ordered` |
 | `ImageRepository` | `bot/repositories/image_repository.py` | `save`, `get_by_id`, `get_active` |
@@ -471,6 +471,9 @@ The module is import-free of FastAPI — pure functions, fully unit-testable.
 | `POST` | `/api/practices` | Bearer JWT | Create practice; 201 `PracticeResponse`; 422 on schema errors; 400 on business-rule violations |
 | `PATCH` | `/api/practices/{id}` | Bearer JWT | Partial update; 200 `PracticeResponse`; 404 if not found; 400 on violations |
 | `DELETE` | `/api/practices/{id}` | Bearer JWT | 204 No Content; 404 if not found |
+| `GET` | `/api/journal` | Bearer JWT | Paginated `JournalListResponse`; optional `?page`, `?page_size` (1–200, default 20), `?date_from`, `?date_to`, `?practice_id` filters |
+| `GET` | `/api/journal/{id}` | Bearer JWT | Single `JournalEntryOut` with practice name and self-assessment; 404 if not found |
+| `GET` | `/api/reports` | Bearer JWT | `PeriodReportResponse` with n_total/n_leads/n_practices/n_good_deeds; requires `?date_from` and `?date_to`; 422 if missing |
 | `POST` | `/api/media` | Bearer JWT | Upload audio/image (multipart `file` + `kind`); saves to disk, uploads to Telegram; 201 `MediaAssetResponse`; 413 if >50 MB |
 | `GET` | `/api/media` | Bearer JWT | List all media assets; optional `?kind=audio\|image` filter |
 | `DELETE` | `/api/media/{id}` | Bearer JWT | Delete media asset row and file on disk; 204; 404 if not found |
