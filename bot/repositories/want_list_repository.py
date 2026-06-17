@@ -45,6 +45,20 @@ class WantListRepository:
         await self._session.flush()
         return item
 
+    async def update(
+        self, item_id: uuid.UUID, *, text: str | None = None, done: bool | None = None
+    ) -> WantListItem | None:
+        """Update text and/or done on an item; return updated item or None if not found."""
+        item = await self.get_by_id(item_id)
+        if item is None:
+            return None
+        if text is not None:
+            item.text = text
+        if done is not None:
+            item.done = done
+        await self._session.flush()
+        return item
+
     async def delete(self, item_id: uuid.UUID) -> bool:
         """Delete the item by id; return True if deleted, False if not found."""
         item = await self.get_by_id(item_id)
