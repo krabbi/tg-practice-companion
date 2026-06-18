@@ -413,7 +413,6 @@ All fields are loaded from environment variables (or `.env` file) via `pydantic-
 | `send_window_end` | `SEND_WINDOW_END` | `int` | `22` | End of send window (local hour, exclusive) |
 | `jwt_secret` | `JWT_SECRET` | `str` | `""` | Stage-2 stub; unused in Stage 1 |
 | `cors_origins` | `CORS_ORIGINS` | `list[str]` | `[]` | Stage-2 stub; unused in Stage 1 |
-| `media_storage_dir` | `MEDIA_STORAGE_DIR` | `str` | `"/data/media"` | Filesystem path for uploaded audio/image files (B4); mount as a volume in production |
 | `s3_endpoint_url` | `S3_ENDPOINT_URL` | `str` | `""` | S3-compatible service endpoint (e.g. `https://s3.us-west-004.backblazeb2.com`); empty disables S3 |
 | `s3_region` | `S3_REGION` | `str` | `""` | S3 region name (e.g. `us-west-004`) |
 | `s3_bucket` | `S3_BUCKET` | `str` | `""` | S3 bucket name |
@@ -519,10 +518,10 @@ docker compose --profile web up web
 The service uses `uvicorn web.main:create_app --factory --host 0.0.0.0 --port ${WEB_PORT:-8000}`.
 It shares the `db` service's Postgres instance via the same `DATABASE_URL`.
 
-Required env vars: `DATABASE_URL`, `JWT_SECRET`, `TELEGRAM_BOT_TOKEN`, `ALLOWED_USER_IDS`, `ANTHROPIC_API_KEY`.
-Optional: `CORS_ORIGINS` (comma-separated origins), `WEB_PORT` (default `8000`), `MEDIA_STORAGE_DIR` (default `/data/media`).
+Required env vars: `DATABASE_URL`, `JWT_SECRET`, `TELEGRAM_BOT_TOKEN`, `ALLOWED_USER_IDS`, `ANTHROPIC_API_KEY`, `S3_ENDPOINT_URL`, `S3_REGION`, `S3_BUCKET`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`.
+Optional: `CORS_ORIGINS` (comma-separated origins), `WEB_PORT` (default `8000`), `S3_PRESIGN_EXPIRY_SECONDS` (default `900`), `MEDIA_MAX_UPLOAD_BYTES` (default `10485760`).
 
-The `web` service mounts the `practice_media` Docker volume at `/data/media` so uploaded files survive container restarts. The `MEDIA_STORAGE_DIR` env var controls the path inside the container.
+Media files are stored in S3-compatible object storage (Backblaze B2 or AWS S3). There is no local media volume. `storage_path` in `media_assets` holds the S3 object key (e.g. `image/<uuid>.jpg`) — no scheme, no leading slash. The `S3StorageService` (`bot/services/storage_service.py`) is constructed in `web/main.py` when all five S3 vars are present; it is None otherwise (upload endpoints return 503).
 
 ---
 
