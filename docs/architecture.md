@@ -493,9 +493,10 @@ The module is import-free of FastAPI — pure functions, fully unit-testable.
 | `GET` | `/api/journal` | Bearer JWT | Paginated `JournalListResponse`; optional `?page`, `?page_size` (1–200, default 20), `?date_from`, `?date_to`, `?practice_id` filters |
 | `GET` | `/api/journal/{id}` | Bearer JWT | Single `JournalEntryOut` with practice name and self-assessment; 404 if not found |
 | `GET` | `/api/reports` | Bearer JWT | `PeriodReportResponse` with n_total/n_leads/n_practices/n_good_deeds; requires `?date_from` and `?date_to`; 422 if missing |
-| `POST` | `/api/media` | Bearer JWT | Upload audio/image (multipart `file` + `kind`); saves to disk, uploads to Telegram; 201 `MediaAssetResponse`; 413 if >50 MB |
+| `POST` | `/api/media` | Bearer JWT | Upload audio/image (multipart `file` + `kind`); saves to S3, uploads to Telegram; 201 `MediaAssetResponse`; 413 if >10 MB |
 | `GET` | `/api/media` | Bearer JWT | List all media assets; optional `?kind=audio\|image` filter |
-| `DELETE` | `/api/media/{id}` | Bearer JWT | Delete media asset row and file on disk; 204; 404 if not found |
+| `GET` | `/api/media/{id}/url` | Bearer JWT | Generate a short-lived presigned S3 GET URL for the asset; 200 `{ url, expires_in }`; 404 if asset not found or has no `storage_path` |
+| `DELETE` | `/api/media/{id}` | Bearer JWT | Delete media asset row and S3 object (best-effort); 204; 404 if not found |
 | `POST` | `/api/motivational-images` | Bearer JWT | Add a `MediaAsset` (kind=image) to the motivational-image pool; 201 `MotivationalImageResponse`; 400 if asset not found or wrong kind |
 | `GET` | `/api/wants` | Bearer JWT | List all want-list items for the authenticated user (oldest first) |
 | `POST` | `/api/wants` | Bearer JWT | Create a want-list item; 201 `WantResponse`; 422 if text is empty |

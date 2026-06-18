@@ -31,6 +31,13 @@ class MediaAssetResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class PresignedUrlResponse(BaseModel):
+    """Response for GET /api/media/{asset_id}/url."""
+
+    url: str
+    expires_in: int
+
+
 class MotivationalImageCreate(BaseModel):
     """Request body for POST /api/motivational-images."""
 
@@ -100,6 +107,23 @@ async def list_media(
 ) -> list:
     """List all media assets, optionally filtered by ?kind=audio|image."""
     return await service.list_assets(kind)
+
+
+@media_router.get("/{asset_id}/url", response_model=PresignedUrlResponse)
+async def get_media_url(
+    asset_id: uuid.UUID,
+    request: Request,
+    service: MediaAdminService = Depends(_make_service),  # noqa: B008
+    _: dict = Depends(get_current_user),  # noqa: B008
+) -> PresignedUrlResponse:
+    """Return a short-lived presigned GET URL for the asset's S3 object."""
+    asset = await service.get_asset(asset_id)
+    if asset is None or asset.storage_path is None:
+        raise HTTPException(status_code=404, detail="Media asset not found")
+    config = request.app.state.config
+    storage = request.app.state.storage_service
+    url = storage.generate_presigned_url(asset.storage_path, config.s3_presign_expiry_seconds)
+    return PresignedUrlResponse(url=url, expires_in=config.s3_presign_expiry_seconds)
 
 
 @media_router.delete("/{asset_id}", status_code=204)
