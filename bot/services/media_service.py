@@ -97,6 +97,10 @@ class MediaAdminService:
         """Return a single media asset by UUID, or None."""
         return await self._repo.get(asset_id)
 
+    def generate_presigned_url(self, storage_path: str, expires_in: int) -> str:
+        """Return a presigned S3 GET URL for *storage_path*."""
+        return self._storage.generate_presigned_url(storage_path, expires_in)
+
     async def delete_asset(self, asset_id: uuid.UUID) -> bool:
         """Delete a MediaAsset row and its S3 object (best-effort). Returns False when not found."""
         asset = await self._repo.get(asset_id)

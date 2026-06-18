@@ -121,8 +121,7 @@ async def get_media_url(
     if asset is None or asset.storage_path is None:
         raise HTTPException(status_code=404, detail="Media asset not found")
     config = request.app.state.config
-    storage = request.app.state.storage_service
-    url = storage.generate_presigned_url(asset.storage_path, config.s3_presign_expiry_seconds)
+    url = service.generate_presigned_url(asset.storage_path, config.s3_presign_expiry_seconds)
     return PresignedUrlResponse(url=url, expires_in=config.s3_presign_expiry_seconds)
 
 
