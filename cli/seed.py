@@ -70,7 +70,7 @@ def _warn_anchor_window(
 # ---------------------------------------------------------------------------
 
 
-def _parse_practice(row: dict) -> tuple[Practice, dict | None]:
+def _parse_practice(row: dict, user_id: int) -> tuple[Practice, dict | None]:
     """Parse one YAML row into a Practice and optional media metadata dict."""
     content_type: str = row["content_type"]
     media_dict: dict | None = None
@@ -84,6 +84,7 @@ def _parse_practice(row: dict) -> tuple[Practice, dict | None]:
 
     practice = Practice(
         id=uuid.uuid4(),
+        user_id=user_id,
         name=row["name"],
         content_type=content_type,
         content=row.get("content"),
@@ -110,6 +111,11 @@ async def seed_practices(yaml_path: Path) -> None:
         logger.info("No practices found in %s", yaml_path)
         return
 
+    if not config.allowed_user_ids:
+        logger.error("ALLOWED_USER_IDS is empty — cannot determine user_id for seeding")
+        sys.exit(1)
+    seed_user_id = config.allowed_user_ids[0]
+
     async with session_factory() as session:
         repo = PracticeRepository(session)
 
@@ -129,7 +135,7 @@ async def seed_practices(yaml_path: Path) -> None:
                     send_window_end=config.send_window_end,
                 )
 
-            practice, media_dict = _parse_practice(row)
+            practice, media_dict = _parse_practice(row, seed_user_id)
             existing = await repo.get_by_name(name)
 
             asset_id: uuid.UUID | None = None
@@ -145,6 +151,7 @@ async def seed_practices(yaml_path: Path) -> None:
                 else:
                     asset = MediaAsset(
                         id=uuid.uuid4(),
+                        user_id=seed_user_id,
                         kind=media_dict["kind"],
                         telegram_file_id=media_dict["telegram_file_id"],
                         mime=media_dict["mime"],
@@ -194,6 +201,11 @@ async def seed_blessings(yaml_path: Path) -> None:
         logger.info("No blessings found in %s", yaml_path)
         return
 
+    if not config.allowed_user_ids:
+        logger.error("ALLOWED_USER_IDS is empty — cannot determine user_id for seeding")
+        sys.exit(1)
+    seed_user_id = config.allowed_user_ids[0]
+
     async with session_factory() as session:
         repo = BlessingRepository(session)
 
@@ -211,6 +223,7 @@ async def seed_blessings(yaml_path: Path) -> None:
             else:
                 blessing = MorningBlessing(
                     id=uuid.uuid4(),
+                    user_id=seed_user_id,
                     text=text,
                     rotation_order=rotation_order,
                     active=active,
@@ -295,6 +308,7 @@ async def seed_images(yaml_path: Path, *, bot: object | None = None) -> None:
                 else:
                     asset = MediaAsset(
                         id=uuid.uuid4(),
+                        user_id=upload_chat_id,
                         kind="image",
                         telegram_file_id=telegram_file_id,
                         mime=mime,
@@ -313,6 +327,7 @@ async def seed_images(yaml_path: Path, *, bot: object | None = None) -> None:
                 else:
                     motivational_img = MotivationalImage(
                         id=uuid.uuid4(),
+                        user_id=upload_chat_id,
                         media_asset_id=asset_id,
                         active=active,
                     )
@@ -401,6 +416,7 @@ async def seed_audio(yaml_path: Path, *, bot: object | None = None) -> None:
                     else:
                         asset = MediaAsset(
                             id=uuid.uuid4(),
+                            user_id=upload_chat_id,
                             kind="audio",
                             telegram_file_id=telegram_file_id,
                             mime=mime,
@@ -413,6 +429,7 @@ async def seed_audio(yaml_path: Path, *, bot: object | None = None) -> None:
                 else:
                     asset = MediaAsset(
                         id=uuid.uuid4(),
+                        user_id=upload_chat_id,
                         kind="audio",
                         telegram_file_id=telegram_file_id,
                         mime=mime,

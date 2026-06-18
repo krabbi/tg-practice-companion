@@ -62,10 +62,10 @@ async def list_blessings(
 async def create_blessing(
     body: BlessingCreate,
     service: BlessingAdminService = Depends(_make_service),  # noqa: B008
-    _: dict = Depends(get_current_user),  # noqa: B008
+    current_user: dict = Depends(get_current_user),  # noqa: B008
 ) -> object:
     """Create a new morning blessing appended to the end of the rotation order."""
-    return await service.create(text=body.text, active=body.active)
+    return await service.create(user_id=current_user["id"], text=body.text, active=body.active)
 
 
 @router.post("/reorder", response_model=list[BlessingResponse])

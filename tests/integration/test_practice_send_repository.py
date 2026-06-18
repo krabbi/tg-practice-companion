@@ -21,6 +21,9 @@ from bot.repositories.practice_send_repository import PracticeSendRepository
 # ---------------------------------------------------------------------------
 
 
+TEST_USER_ID = 123456789
+
+
 def make_practice_row() -> Practice:
     p = Practice()
     p.id = uuid.uuid4()
@@ -36,6 +39,7 @@ def make_practice_row() -> Practice:
     p.anchor_minute = 0
     p.sort_order = 0
     p.media_asset_id = None
+    p.user_id = TEST_USER_ID
     return p
 
 

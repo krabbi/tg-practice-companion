@@ -33,6 +33,9 @@ class MediaAsset(Base, UUIDMixin, TimestampMixin):
 
     __tablename__ = "media_assets"
 
+    user_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("users.telegram_id"), nullable=False, index=True
+    )
     kind: Mapped[str] = mapped_column(
         Enum("audio", "image", name="media_asset_kind"),
         nullable=False,
@@ -53,8 +56,11 @@ class Practice(Base, UUIDMixin, TimestampMixin):
     """
 
     __tablename__ = "practices"
-    __table_args__ = (Index("ix_practices_active", "active"),)
+    __table_args__ = (Index("ix_practices_user_active", "user_id", "active"),)
 
+    user_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("users.telegram_id"), nullable=False, index=True
+    )
     name: Mapped[str] = mapped_column(String(120), nullable=False)
     content_type: Mapped[str] = mapped_column(
         Enum(

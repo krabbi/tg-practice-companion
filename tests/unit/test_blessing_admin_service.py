@@ -11,6 +11,8 @@ import pytest
 from bot.models.morning import MorningBlessing
 from bot.services.blessing_admin_service import BlessingAdminService
 
+_USER_ID = 123456789
+
 
 def _make_service() -> tuple[BlessingAdminService, AsyncMock, AsyncMock]:
     session = AsyncMock()
@@ -22,6 +24,7 @@ def _make_service() -> tuple[BlessingAdminService, AsyncMock, AsyncMock]:
 def _make_blessing(text: str = "Test blessing", rotation_order: int = 1) -> MorningBlessing:
     b = MorningBlessing()
     b.id = uuid.uuid4()
+    b.user_id = _USER_ID
     b.text = text
     b.rotation_order = rotation_order
     b.active = True
@@ -48,9 +51,11 @@ async def test_create_appends_to_end_and_commits() -> None:
     created = _make_blessing(rotation_order=3)
     repo.create.return_value = created
 
-    result = await service.create(text="New blessing")
+    result = await service.create(user_id=_USER_ID, text="New blessing")
 
-    repo.create.assert_awaited_once_with(text="New blessing", rotation_order=3, active=True)
+    repo.create.assert_awaited_once_with(
+        user_id=_USER_ID, text="New blessing", rotation_order=3, active=True
+    )
     session.commit.assert_awaited_once()
     assert result is created
 
@@ -62,9 +67,11 @@ async def test_create_with_no_existing_uses_order_one() -> None:
     created = _make_blessing(rotation_order=1)
     repo.create.return_value = created
 
-    result = await service.create(text="First blessing")
+    result = await service.create(user_id=_USER_ID, text="First blessing")
 
-    repo.create.assert_awaited_once_with(text="First blessing", rotation_order=1, active=True)
+    repo.create.assert_awaited_once_with(
+        user_id=_USER_ID, text="First blessing", rotation_order=1, active=True
+    )
     session.commit.assert_awaited_once()
     assert result is created
 
@@ -75,9 +82,11 @@ async def test_create_passes_active_flag() -> None:
     repo.list_all.return_value = []
     repo.create.return_value = _make_blessing()
 
-    await service.create(text="Draft", active=False)
+    await service.create(user_id=_USER_ID, text="Draft", active=False)
 
-    repo.create.assert_awaited_once_with(text="Draft", rotation_order=1, active=False)
+    repo.create.assert_awaited_once_with(
+        user_id=_USER_ID, text="Draft", rotation_order=1, active=False
+    )
 
 
 async def test_update_found_commits_and_returns() -> None:

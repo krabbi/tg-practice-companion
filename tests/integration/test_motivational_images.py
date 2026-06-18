@@ -89,6 +89,7 @@ def _make_morning_image_practice(media_asset_id: uuid.UUID) -> Practice:
     p.start_date = None
     p.end_date = None
     p.sort_order = 40
+    p.user_id = _USER_ID
     return p
 
 
@@ -108,6 +109,7 @@ def _make_afternoon_practice() -> Practice:
     p.start_date = None
     p.end_date = None
     p.sort_order = 260
+    p.user_id = _USER_ID
     return p
 
 
@@ -118,6 +120,7 @@ def _make_media_asset(telegram_file_id: str) -> MediaAsset:
     a.telegram_file_id = telegram_file_id
     a.storage_path = None
     a.mime = "image/jpeg"
+    a.user_id = _USER_ID
     return a
 
 
@@ -126,6 +129,7 @@ def _make_pool_image(media_asset_id: uuid.UUID) -> MotivationalImage:
     img.id = uuid.uuid4()
     img.media_asset_id = media_asset_id
     img.active = True
+    img.user_id = _USER_ID
     return img
 
 

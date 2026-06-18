@@ -349,6 +349,7 @@ async def test_tick_sends_good_deed_question_and_writes_prompt() -> None:
 
         practice = Practice()
         practice.id = uuid.uuid4()
+        practice.user_id = 123456789
         practice.name = "Good deed capture"
         practice.content_type = "good_deeds"
         practice.content = "Какое доброе дело ты сделала сегодня?"
@@ -434,6 +435,7 @@ async def test_tick_sends_15_reminder_as_text() -> None:
 
         practice = Practice()
         practice.id = uuid.uuid4()
+        practice.user_id = 123456789
         practice.name = "Good deed reminder"
         practice.content_type = "text"
         practice.content = "Помни: сделай сегодня одно доброе дело!"

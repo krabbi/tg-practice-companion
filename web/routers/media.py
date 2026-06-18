@@ -80,7 +80,7 @@ async def upload_media(
     file: UploadFile = File(...),  # noqa: B008
     kind: Literal["audio", "image"] = Form(...),  # noqa: B008
     service: MediaAdminService = Depends(_make_service),  # noqa: B008
-    _: dict = Depends(get_current_user),  # noqa: B008
+    current_user: dict = Depends(get_current_user),  # noqa: B008
 ) -> object:
     """Upload an audio or image file; persist to S3 and capture a Telegram file_id."""
     config = request.app.state.config
@@ -94,7 +94,7 @@ async def upload_media(
     filename = file.filename or f"upload.{kind}"
     mime = file.content_type or ("audio/mpeg" if kind == "audio" else "image/jpeg")
     try:
-        return await service.upload(data, filename, kind, mime)
+        return await service.upload(data, filename, kind, mime, current_user["id"])
     except MediaAssetError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -141,10 +141,12 @@ async def delete_media(
 async def create_motivational_image(
     body: MotivationalImageCreate,
     service: MediaAdminService = Depends(_make_service),  # noqa: B008
-    _: dict = Depends(get_current_user),  # noqa: B008
+    current_user: dict = Depends(get_current_user),  # noqa: B008
 ) -> object:
     """Add a MediaAsset to the motivational-image pool."""
     try:
-        return await service.create_motivational_image(body.media_asset_id, body.active)
+        return await service.create_motivational_image(
+            body.media_asset_id, current_user["id"], body.active
+        )
     except MediaAssetError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

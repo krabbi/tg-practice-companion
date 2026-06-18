@@ -79,6 +79,7 @@ async def seeded(engine_and_factory):
             content="How do you feel?",
             periodicity_type="fixed_times",
             schedule_times=["09:00"],
+            user_id=ALLOWED_USER_ID,
         )
         session.add(practice)
         await session.flush()

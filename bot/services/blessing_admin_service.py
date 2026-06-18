@@ -19,11 +19,13 @@ class BlessingAdminService:
         """Return all blessings ordered by rotation_order."""
         return await self._repo.list_all()
 
-    async def create(self, *, text: str, active: bool = True) -> MorningBlessing:
+    async def create(self, *, user_id: int, text: str, active: bool = True) -> MorningBlessing:
         """Create a new blessing appended to the end of the rotation order and commit."""
         existing = await self._repo.list_all()
         next_order = (max((b.rotation_order for b in existing), default=0)) + 1
-        blessing = await self._repo.create(text=text, rotation_order=next_order, active=active)
+        blessing = await self._repo.create(
+            user_id=user_id, text=text, rotation_order=next_order, active=active
+        )
         await self._session.commit()
         return blessing
 

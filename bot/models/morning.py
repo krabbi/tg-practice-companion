@@ -31,9 +31,12 @@ class MorningBlessing(Base, UUIDMixin):
 
     __tablename__ = "morning_blessings"
     __table_args__ = (
-        UniqueConstraint("rotation_order", name="uq_morning_blessings_rotation_order"),
+        UniqueConstraint("user_id", "rotation_order", name="uq_morning_blessings_user_rotation"),
     )
 
+    user_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("users.telegram_id"), nullable=False, index=True
+    )
     text: Mapped[str] = mapped_column(Text, nullable=False)
     rotation_order: Mapped[int] = mapped_column(Integer, nullable=False)
     active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
@@ -44,6 +47,9 @@ class MotivationalImage(Base, UUIDMixin):
 
     __tablename__ = "motivational_images"
 
+    user_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("users.telegram_id"), nullable=False, index=True
+    )
     media_asset_id: Mapped[uuid.UUID] = mapped_column(
         PG_UUID(as_uuid=True),
         ForeignKey("media_assets.id"),
@@ -78,8 +84,12 @@ class ApiUsageLog(Base, UUIDMixin):
     """One row per product LLM/API call for cost tracking (AC-16)."""
 
     __tablename__ = "api_usage_logs"
-    __table_args__ = (Index("ix_api_usage_logs_created_at", "created_at"),)
+    __table_args__ = (
+        Index("ix_api_usage_logs_created_at", "created_at"),
+        Index("ix_api_usage_logs_user_id", "user_id"),
+    )
 
+    user_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     kind: Mapped[str] = mapped_column(
         Enum("analysis", "report", "transcription", name="api_usage_kind"),
         nullable=False,

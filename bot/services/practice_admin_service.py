@@ -75,6 +75,7 @@ class PracticeAdminService:
     async def create(
         self,
         *,
+        user_id: int,
         name: str,
         content_type: str,
         content: str | None,
@@ -93,6 +94,7 @@ class PracticeAdminService:
         self._validate_schedule(name, periodicity_type, interval_hours, schedule_times, anchor_hour)
         practice = Practice(
             id=uuid.uuid4(),
+            user_id=user_id,
             name=name,
             content_type=content_type,
             content=content,

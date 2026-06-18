@@ -11,6 +11,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from bot.models.practice import MediaAsset
 from bot.repositories.media_asset_repository import MediaAssetRepository
 
+TEST_USER_ID = 123456789
+
 
 def _make_asset(kind: str = "image") -> MediaAsset:
     return MediaAsset(
@@ -19,6 +21,7 @@ def _make_asset(kind: str = "image") -> MediaAsset:
         storage_path=f"/data/media/{uuid.uuid4()}.bin",
         telegram_file_id=None,
         mime="application/octet-stream",
+        user_id=TEST_USER_ID,
     )
 
 

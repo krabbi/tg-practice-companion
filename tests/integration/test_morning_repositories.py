@@ -27,12 +27,16 @@ from bot.repositories.image_repository import ImageRepository
 # ---------------------------------------------------------------------------
 
 
+TEST_USER_ID = 123456789
+
+
 def make_blessing(text: str = "Blessed morning", rotation_order: int = 1) -> MorningBlessing:
     b = MorningBlessing()
     b.id = uuid.uuid4()
     b.text = text
     b.rotation_order = rotation_order
     b.active = True
+    b.user_id = TEST_USER_ID
     return b
 
 
@@ -43,6 +47,7 @@ def make_media_asset() -> MediaAsset:
     a.telegram_file_id = "AgACAgI_image123"
     a.storage_path = None
     a.mime = "image/jpeg"
+    a.user_id = TEST_USER_ID
     return a
 
 
@@ -51,6 +56,7 @@ def make_image(media_asset_id: uuid.UUID, active: bool = True) -> MotivationalIm
     img.id = uuid.uuid4()
     img.media_asset_id = media_asset_id
     img.active = active
+    img.user_id = TEST_USER_ID
     return img
 
 
