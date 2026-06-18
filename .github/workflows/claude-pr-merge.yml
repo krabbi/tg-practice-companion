@@ -169,7 +169,28 @@ jobs:
           fi
 
           if [ "$FAILED" = "true" ]; then
-            BODY="[AUTOBOT ERROR] CI checks failed or not found. Cannot merge. lint: ${LINT_CONCLUSION}, test: ${TEST_CONCLUSION}. Setting needs-human for manual review."
+            # A real check FAILURE (lint/test/frontend conclusion == "failure") is a
+            # code problem the coder agent can fix. Route it back into the code-fix
+            # loop instead of parking the PR for a human: add code-changes-requested,
+            # which triggers claude-pr-fix ONLY (every other stage gets a throwaway
+            # concurrency group and skips). That loop enforces the 5-round cap and
+            # falls through to needs-human once exhausted, so a CI failure the agent
+            # cannot actually fix still terminates — it can't ping-pong forever.
+            #
+            # A MISSING / unreadable gate check (lint or test absent) is an infra or
+            # config anomaly the coder cannot fix; that path stays needs-human.
+            if [ "$LINT_CONCLUSION" = "failure" ] || [ "$TEST_CONCLUSION" = "failure" ] || [ "$FRONTEND_CONCLUSION" = "failure" ]; then
+              gh pr comment "${PR_NUMBER}" --body "[AUTOBOT CI FAILURE] A required CI check failed, so this PR cannot merge yet — routing it back to the code-fix loop (label: code-changes-requested). Failing conclusions → lint: ${LINT_CONCLUSION}, test: ${TEST_CONCLUSION}, frontend: ${FRONTEND_CONCLUSION:-<absent>}. Coder agent: read the failing run logs (\`gh pr checks ${PR_NUMBER}\`, \`gh run view <run-id> --log-failed\`), fix the root cause, and push. NOTE: the 'test' job runs against real Postgres — watch for FK-order / teardown / type-cast issues the local sqlite run misses. <!-- autobot:ci-failure -->"
+              # Reset stale approvals so the PR state is honest and re-approval later
+              # is a real 0->1 label transition that re-fires the downstream stages.
+              gh pr edit "${PR_NUMBER}" --remove-label "product-approved" || true
+              gh pr edit "${PR_NUMBER}" --remove-label "code-approved" || true
+              gh pr edit "${PR_NUMBER}" --add-label "code-changes-requested"
+              echo "CI gate failed (lint=${LINT_CONCLUSION}, test=${TEST_CONCLUSION}, frontend=${FRONTEND_CONCLUSION:-absent}) — routed back to code-fix loop."
+              exit 1
+            fi
+
+            BODY="[AUTOBOT ERROR] CI gate checks missing or unreadable (lint: ${LINT_CONCLUSION:-<absent>}, test: ${TEST_CONCLUSION:-<absent>}). Cannot merge and cannot auto-fix. Setting needs-human for manual review."
             gh pr comment "${PR_NUMBER}" --body "${BODY}"
             gh pr edit "${PR_NUMBER}" --add-label "needs-human"
             exit 1
