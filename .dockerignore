@@ -1,0 +1,31 @@
+# Secrets — never bake runtime config into the image (config comes from the
+# compose `environment:` block / runtime env vars instead).
+.env
+.env.*
+!.env.example
+
+# VCS / CI
+.git
+.github
+
+# Python caches & local virtualenvs
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+htmlcov/
+.coverage
+coverage.json
+
+# Node / frontend build artifacts (the SPA is built separately and bind-mounted)
+node_modules/
+frontend/node_modules/
+frontend/dist/
+
+# Editor / OS noise
+.idea/
+.vscode/
+.DS_Store

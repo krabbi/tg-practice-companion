@@ -41,6 +41,26 @@ def test_list_ids_passthrough() -> None:
     assert cfg.allowed_user_ids == [7, 8]
 
 
+def test_single_int_id() -> None:
+    """Accept a single bare int (mirrors a JSON-decoded scalar env value)."""
+    cfg = make_config(allowed_user_ids=42)
+    assert cfg.allowed_user_ids == [42]
+
+
+def test_bracketed_ids_string() -> None:
+    """Accept a JSON-array-ish string with surrounding brackets and spaces."""
+    cfg = make_config(allowed_user_ids="[42, 43]")
+    assert cfg.allowed_user_ids == [42, 43]
+
+
+def test_bool_allowed_user_ids_rejected() -> None:
+    """Reject a bool (a subclass of int) rather than coercing it to [True->1]."""
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError):
+        make_config(allowed_user_ids=True)
+
+
 def test_invalid_allowed_user_ids_raises() -> None:
     """Raise a validation error for completely unparseable allowed_user_ids."""
     from pydantic import ValidationError
@@ -120,6 +140,12 @@ def test_cors_origins_list_passthrough() -> None:
     """cors_origins accepts an already-parsed list."""
     cfg = make_config(cors_origins=["https://x.io"])
     assert cfg.cors_origins == ["https://x.io"]
+
+
+def test_cors_origins_json_array_string() -> None:
+    """cors_origins accepts a JSON-array-ish string with brackets and quotes."""
+    cfg = make_config(cors_origins='["https://x.io", "https://y.io"]')
+    assert cfg.cors_origins == ["https://x.io", "https://y.io"]
 
 
 def test_web_app_url_defaults_empty() -> None:

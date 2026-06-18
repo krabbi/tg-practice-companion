@@ -1,10 +1,10 @@
 """Application configuration via pydantic-settings."""
 
 from functools import lru_cache
-from typing import Any
+from typing import Annotated, Any
 
 from pydantic import field_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 
 class Config(BaseSettings):
@@ -22,8 +22,11 @@ class Config(BaseSettings):
     # Database
     database_url: str
 
-    # Access control — CSV of integer Telegram user IDs, e.g. "123456789"
-    allowed_user_ids: list[int]
+    # Access control — CSV of integer Telegram user IDs, e.g. "123456789".
+    # NoDecode disables pydantic-settings' JSON pre-parsing of this complex field so the
+    # raw env string reaches parse_csv_ids; otherwise a bare single id ("123456789") would
+    # be JSON-decoded to an int and a CSV value would fail to parse at the source level.
+    allowed_user_ids: Annotated[list[int], NoDecode]
 
     # Cost guardrails (AC-16, AC-11)
     monthly_cost_limit_usd: float = 10.0
@@ -42,7 +45,9 @@ class Config(BaseSettings):
 
     # Stage-2 enabler stubs — unused in Stage 1, mirroring sibling repo shape
     jwt_secret: str = ""
-    cors_origins: list[str] = []
+    # NoDecode for the same reason as allowed_user_ids: a CSV string like
+    # "https://a.com,https://b.com" is not valid JSON and would raise at the source level.
+    cors_origins: Annotated[list[str], NoDecode] = []
 
     # Media storage — path on disk where uploaded audio/images are persisted (B4)
     media_storage_dir: str = "/data/media"
@@ -53,9 +58,14 @@ class Config(BaseSettings):
     @field_validator("allowed_user_ids", mode="before")
     @classmethod
     def parse_csv_ids(cls, v: Any) -> list[int]:
-        """Accept both a CSV string ('123,456') and an already-parsed list."""
+        """Accept a CSV string ('123,456'), a single int, a JSON-ish '[1,2]' string, or a list."""
+        if isinstance(v, bool):  # bool is a subclass of int; reject it explicitly
+            raise ValueError(f"Cannot parse allowed_user_ids from {v!r}")
+        if isinstance(v, int):
+            return [v]
         if isinstance(v, str):
-            return [int(x.strip()) for x in v.split(",") if x.strip()]
+            items = v.strip().strip("[]").split(",")
+            return [int(s.strip().strip("\"'")) for s in items if s.strip().strip("\"'")]
         if isinstance(v, (list, tuple)):
             return [int(x) for x in v]
         raise ValueError(f"Cannot parse allowed_user_ids from {v!r}")
@@ -63,11 +73,10 @@ class Config(BaseSettings):
     @field_validator("cors_origins", mode="before")
     @classmethod
     def parse_cors_origins(cls, v: Any) -> list[str]:
-        """Accept both a CSV string and an already-parsed list."""
+        """Accept a CSV string, a JSON-ish '["a","b"]' string, or an already-parsed list."""
         if isinstance(v, str):
-            if not v.strip():
-                return []
-            return [x.strip() for x in v.split(",") if x.strip()]
+            items = v.strip().strip("[]").split(",")
+            return [s.strip().strip("\"'") for s in items if s.strip().strip("\"'")]
         if isinstance(v, (list, tuple)):
             return list(v)
         raise ValueError(f"Cannot parse cors_origins from {v!r}")
