@@ -2,7 +2,6 @@
 
 import uuid
 from datetime import datetime
-from pathlib import Path
 from typing import Literal
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
@@ -16,8 +15,6 @@ from web.dependencies import get_current_user, get_db_session
 
 media_router = APIRouter(prefix="/api/media", tags=["media"])
 motivational_router = APIRouter(prefix="/api/motivational-images", tags=["motivational-images"])
-
-_MAX_UPLOAD_BYTES = 50 * 1024 * 1024  # 50 MB
 
 
 class MediaAssetResponse(BaseModel):
@@ -59,28 +56,34 @@ def _make_service(
     config = request.app.state.config
     bot = getattr(request.app.state, "bot", None)
     chat_id = config.allowed_user_ids[0] if config.allowed_user_ids else None
-    storage_dir = Path(config.media_storage_dir)
+    storage = request.app.state.storage_service
     return MediaAdminService(
         session,
         MediaAssetRepository(session),
         ImageRepository(session),
         bot,
         chat_id,
-        storage_dir,
+        storage,
     )
 
 
 @media_router.post("", response_model=MediaAssetResponse, status_code=201)
 async def upload_media(
+    request: Request,
     file: UploadFile = File(...),  # noqa: B008
     kind: Literal["audio", "image"] = Form(...),  # noqa: B008
     service: MediaAdminService = Depends(_make_service),  # noqa: B008
     _: dict = Depends(get_current_user),  # noqa: B008
 ) -> object:
-    """Upload an audio or image file; persist to disk and capture a Telegram file_id."""
+    """Upload an audio or image file; persist to S3 and capture a Telegram file_id."""
+    config = request.app.state.config
+    max_bytes: int = config.media_max_upload_bytes
+    limit_mb = max_bytes // (1024 * 1024)
+    if file.size is not None and file.size > max_bytes:
+        raise HTTPException(status_code=413, detail=f"File too large (max {limit_mb} MB)")
     data = await file.read()
-    if len(data) > _MAX_UPLOAD_BYTES:
-        raise HTTPException(status_code=413, detail="File too large (max 50 MB)")
+    if len(data) > max_bytes:
+        raise HTTPException(status_code=413, detail=f"File too large (max {limit_mb} MB)")
     filename = file.filename or f"upload.{kind}"
     mime = file.content_type or ("audio/mpeg" if kind == "audio" else "image/jpeg")
     try:
@@ -105,7 +108,7 @@ async def delete_media(
     service: MediaAdminService = Depends(_make_service),  # noqa: B008
     _: dict = Depends(get_current_user),  # noqa: B008
 ) -> None:
-    """Delete a media asset and its file on disk."""
+    """Delete a media asset row and its S3 object (best-effort)."""
     found = await service.delete_asset(asset_id)
     if not found:
         raise HTTPException(status_code=404, detail="Media asset not found")

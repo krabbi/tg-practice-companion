@@ -2,7 +2,6 @@
 
 import io
 import uuid
-from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -11,6 +10,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from bot.config import Config
 from bot.models.base import Base
+from bot.services.storage_service import S3StorageService
 from web.auth import create_jwt
 from web.dependencies import get_db_session
 from web.main import create_app
@@ -53,9 +53,17 @@ def _make_mock_bot() -> MagicMock:
     return bot
 
 
+def _make_mock_storage() -> S3StorageService:
+    """Return a mock S3StorageService."""
+    storage = MagicMock(spec=S3StorageService)
+    storage.put_object = AsyncMock()
+    storage.delete_object = AsyncMock()
+    return storage
+
+
 @pytest.fixture
-async def client(tmp_path: Path) -> AsyncClient:
-    """AsyncClient with isolated SQLite DB, temp media dir, and a mocked Bot."""
+async def client() -> AsyncClient:
+    """AsyncClient with isolated SQLite DB, mocked S3 gateway, and a mocked Bot."""
     engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
@@ -65,11 +73,12 @@ async def client(tmp_path: Path) -> AsyncClient:
         async with factory() as session:
             yield session
 
-    config = Config.model_validate({**_BASE_CONFIG, "media_storage_dir": str(tmp_path)})
+    config = Config.model_validate(_BASE_CONFIG)
     app = create_app(config)
     app.dependency_overrides[get_db_session] = _override_session
-    # Inject mock Bot before entering the lifespan so own_bot=False in lifespan
+    # Inject mocks before entering the lifespan
     app.state.bot = _make_mock_bot()
+    app.state.storage_service = _make_mock_storage()
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
         yield ac
@@ -125,11 +134,11 @@ async def test_motivational_image_without_token_returns_401(client: AsyncClient)
 # ---------------------------------------------------------------------------
 
 
-async def test_upload_image_creates_asset_with_file_id(
-    client: AsyncClient, auth_headers: dict, tmp_path: Path
+async def test_upload_image_creates_asset_with_s3_key(
+    client: AsyncClient, auth_headers: dict
 ) -> None:
-    """Upload an image → row has telegram_file_id populated, storage_path set, correct kind/mime."""
-    fake_image = b"\xff\xd8\xff\xe0" + b"\x00" * 100  # minimal JPEG-like bytes
+    """Upload an image → row has telegram_file_id populated, storage_path is an S3 key."""
+    fake_image = b"\xff\xd8\xff\xe0" + b"\x00" * 100
     files = {"file": ("photo.jpg", io.BytesIO(fake_image), "image/jpeg")}
     data = {"kind": "image"}
 
@@ -141,7 +150,9 @@ async def test_upload_image_creates_asset_with_file_id(
     assert body["mime"] == "image/jpeg"
     assert body["telegram_file_id"] == _FAKE_PHOTO_FILE_ID
     assert body["storage_path"] is not None
-    assert Path(body["storage_path"]).exists()
+    # storage_path is an S3 key (no leading slash, starts with kind/)
+    assert body["storage_path"].startswith("image/")
+    assert body["storage_path"].endswith(".jpg")
     assert body["id"] is not None
 
 
@@ -150,10 +161,10 @@ async def test_upload_image_creates_asset_with_file_id(
 # ---------------------------------------------------------------------------
 
 
-async def test_upload_audio_creates_asset_with_file_id(
+async def test_upload_audio_creates_asset_with_s3_key(
     client: AsyncClient, auth_headers: dict
 ) -> None:
-    """Upload an audio file → row has telegram_file_id, storage_path, kind=audio."""
+    """Upload an audio file → row has telegram_file_id, storage_path is an S3 key."""
     fake_audio = b"ID3" + b"\x00" * 100
     files = {"file": ("track.mp3", io.BytesIO(fake_audio), "audio/mpeg")}
     data = {"kind": "audio"}
@@ -166,6 +177,33 @@ async def test_upload_audio_creates_asset_with_file_id(
     assert body["mime"] == "audio/mpeg"
     assert body["telegram_file_id"] == _FAKE_AUDIO_FILE_ID
     assert body["storage_path"] is not None
+    assert body["storage_path"].startswith("audio/")
+
+
+# ---------------------------------------------------------------------------
+# Upload size limit
+# ---------------------------------------------------------------------------
+
+
+async def test_upload_just_under_10mb_passes(client: AsyncClient, auth_headers: dict) -> None:
+    """Upload of 10 MB - 1 byte is accepted."""
+    data_bytes = b"x" * (10 * 1024 * 1024 - 1)
+    files = {"file": ("big.jpg", io.BytesIO(data_bytes), "image/jpeg")}
+    resp = await client.post(
+        "/api/media", data={"kind": "image"}, files=files, headers=auth_headers
+    )
+    assert resp.status_code == 201
+
+
+async def test_upload_over_10mb_returns_413(client: AsyncClient, auth_headers: dict) -> None:
+    """Upload of 10 MB + 1 byte is rejected with 413."""
+    data_bytes = b"x" * (10 * 1024 * 1024 + 1)
+    files = {"file": ("toobig.jpg", io.BytesIO(data_bytes), "image/jpeg")}
+    resp = await client.post(
+        "/api/media", data={"kind": "image"}, files=files, headers=auth_headers
+    )
+    assert resp.status_code == 413
+    assert "10 MB" in resp.json()["detail"]
 
 
 # ---------------------------------------------------------------------------
@@ -211,18 +249,16 @@ async def test_list_filter_by_kind(client: AsyncClient, auth_headers: dict) -> N
 # ---------------------------------------------------------------------------
 
 
-async def test_delete_asset_removes_row_and_file(client: AsyncClient, auth_headers: dict) -> None:
-    """DELETE /api/media/{id} removes the row and the file on disk."""
+async def test_delete_asset_removes_row(client: AsyncClient, auth_headers: dict) -> None:
+    """DELETE /api/media/{id} removes the DB row (S3 delete is mocked)."""
     files = {"file": ("img.jpg", io.BytesIO(b"fake"), "image/jpeg")}
     resp = await client.post(
         "/api/media", data={"kind": "image"}, files=files, headers=auth_headers
     )
     asset_id = resp.json()["id"]
-    storage_path = Path(resp.json()["storage_path"])
 
     resp = await client.delete(f"/api/media/{asset_id}", headers=auth_headers)
     assert resp.status_code == 204
-    assert not storage_path.exists()
 
     # List should be empty
     resp = await client.get("/api/media", headers=auth_headers)

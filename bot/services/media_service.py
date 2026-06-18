@@ -1,5 +1,6 @@
 """Admin service for media asset upload and motivational-image pool management (B4)."""
 
+import logging
 import uuid
 from pathlib import Path
 
@@ -9,6 +10,9 @@ from bot.models.morning import MotivationalImage
 from bot.models.practice import MediaAsset
 from bot.repositories.image_repository import ImageRepository
 from bot.repositories.media_asset_repository import MediaAssetRepository
+from bot.services.storage_service import S3StorageService
+
+_log = logging.getLogger(__name__)
 
 
 class MediaAssetError(Exception):
@@ -16,7 +20,7 @@ class MediaAssetError(Exception):
 
 
 class MediaAdminService:
-    """Upload media files to disk + Telegram, manage the motivational-image pool."""
+    """Upload media files to S3 + Telegram, manage the motivational-image pool."""
 
     def __init__(
         self,
@@ -25,14 +29,14 @@ class MediaAdminService:
         image_repo: ImageRepository,
         bot: object | None,
         chat_id: int | None,
-        storage_dir: Path,
+        storage: S3StorageService,
     ) -> None:
         self._session = session
         self._repo = repo
         self._image_repo = image_repo
         self._bot = bot
         self._chat_id = chat_id
-        self._storage_dir = storage_dir
+        self._storage = storage
 
     async def upload(
         self,
@@ -41,7 +45,13 @@ class MediaAdminService:
         kind: str,
         mime: str,
     ) -> MediaAsset:
-        """Save bytes to disk, upload to Telegram to capture file_id, and commit a MediaAsset row.
+        """Upload bytes to S3, capture Telegram file_id, and commit a MediaAsset row.
+
+        Order of operations:
+          1. PUT to S3 — abort entirely if this fails (no row, no orphan).
+          2. Send to Telegram to capture file_id. If this raises, best-effort
+             delete the S3 object then re-raise.
+          3. Create DB row and commit.
 
         When bot is None (e.g. in tests), the Telegram upload step is skipped and
         telegram_file_id is left null. The storage_path invariant is always satisfied.
@@ -51,20 +61,27 @@ class MediaAdminService:
 
         asset_id = uuid.uuid4()
         suffix = Path(filename).suffix or _kind_default_suffix(kind)
-        self._storage_dir.mkdir(parents=True, exist_ok=True)
-        storage_path = self._storage_dir / f"{asset_id}{suffix}"
-        storage_path.write_bytes(data)
+        key = f"{kind}/{asset_id}{suffix}"
+
+        await self._storage.put_object(key, data, content_type=mime)
 
         telegram_file_id: str | None = None
         if self._bot is not None and self._chat_id is not None:
-            telegram_file_id = await _send_to_telegram(
-                self._bot, self._chat_id, data, filename, kind
-            )
+            try:
+                telegram_file_id = await _send_to_telegram(
+                    self._bot, self._chat_id, data, filename, kind
+                )
+            except Exception:
+                try:
+                    await self._storage.delete_object(key)
+                except Exception:
+                    _log.warning("Failed to clean up orphan S3 object %r after Telegram error", key)
+                raise
 
         asset = MediaAsset(
             id=asset_id,
             kind=kind,
-            storage_path=str(storage_path),
+            storage_path=key,
             telegram_file_id=telegram_file_id,
             mime=mime,
         )
@@ -81,15 +98,18 @@ class MediaAdminService:
         return await self._repo.get(asset_id)
 
     async def delete_asset(self, asset_id: uuid.UUID) -> bool:
-        """Delete a MediaAsset row and its file on disk. Returns False when not found."""
+        """Delete a MediaAsset row and its S3 object (best-effort). Returns False when not found."""
         asset = await self._repo.get(asset_id)
         if asset is None:
             return False
-        storage_path = Path(asset.storage_path) if asset.storage_path else None
+        storage_path = asset.storage_path
         await self._repo.delete(asset_id)
         await self._session.commit()
-        if storage_path is not None and storage_path.exists():
-            storage_path.unlink(missing_ok=True)
+        if storage_path is not None:
+            try:
+                await self._storage.delete_object(storage_path)
+            except Exception:
+                _log.warning("Failed to delete S3 object %r; row already removed", storage_path)
         return True
 
     async def create_motivational_image(
@@ -123,19 +143,16 @@ async def _send_to_telegram(
     filename: str,
     kind: str,
 ) -> str | None:
-    """Send bytes to Telegram and return the telegram_file_id, or None on failure."""
+    """Send bytes to Telegram and return the telegram_file_id, or None if no file_id returned."""
     from aiogram.types import BufferedInputFile
 
     input_file = BufferedInputFile(data, filename=filename)
-    try:
-        if kind == "image":
-            msg = await bot.send_photo(chat_id=chat_id, photo=input_file)  # type: ignore[union-attr]
-            if msg.photo:
-                return msg.photo[-1].file_id
-        else:
-            msg = await bot.send_audio(chat_id=chat_id, audio=input_file)  # type: ignore[union-attr]
-            if msg.audio:
-                return msg.audio.file_id
-    except Exception:
-        pass
+    if kind == "image":
+        msg = await bot.send_photo(chat_id=chat_id, photo=input_file)  # type: ignore[union-attr]
+        if msg.photo:
+            return msg.photo[-1].file_id
+    else:
+        msg = await bot.send_audio(chat_id=chat_id, audio=input_file)  # type: ignore[union-attr]
+        if msg.audio:
+            return msg.audio.file_id
     return None

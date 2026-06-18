@@ -37,7 +37,7 @@ class MediaAsset(Base, UUIDMixin, TimestampMixin):
         Enum("audio", "image", name="media_asset_kind"),
         nullable=False,
     )
-    # Object-store/filesystem path for original bytes; null in Stage 1
+    # S3 object key for original bytes (e.g. "image/<uuid>.jpg"); null in Stage 1
     storage_path: Mapped[str | None] = mapped_column(String(512), nullable=True)
     # Telegram file ID used for re-sending without re-uploading (AC-2)
     telegram_file_id: Mapped[str | None] = mapped_column(String(256), nullable=True)
