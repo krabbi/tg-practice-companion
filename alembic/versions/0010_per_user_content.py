@@ -7,6 +7,14 @@ Create Date: 2026-06-18 00:00:00.000000
 All column additions and constraint changes use op.batch_alter_table so that the migration
 works on both SQLite (used by unit tests, which cannot ALTER NOT NULL or swap UNIQUE in place)
 and Postgres (CI integration tests and production).
+
+Batch mode runs in the default ``recreate="auto"``: on SQLite alembic recreates the table
+when an operation requires it (NOT NULL, ADD FK, swap UNIQUE), while on Postgres every
+operation is issued as a native ``ALTER TABLE`` / ``CREATE INDEX`` with no table recreation.
+``recreate="always"`` must NOT be used here: it would force the SQLite-style
+copy/drop/rename on Postgres too, and dropping ``practices`` fails with
+``DependentObjectsStillExistError`` because journal_entries / practice_sends /
+pending_prompts hold FKs onto ``practices_pkey``.
 """
 
 from collections.abc import Sequence
@@ -65,7 +73,7 @@ def upgrade() -> None:
     # ------------------------------------------------------------------
     # Step 3a: practices — NOT NULL + FK + swap index
     # ------------------------------------------------------------------
-    with op.batch_alter_table("practices", recreate="always") as batch_op:
+    with op.batch_alter_table("practices") as batch_op:
         batch_op.alter_column("user_id", existing_type=sa.BigInteger(), nullable=False)
         batch_op.create_foreign_key("fk_practices_user_id", "users", ["user_id"], ["telegram_id"])
         # Replace the single-column active index with a composite (user_id, active) index
@@ -75,7 +83,7 @@ def upgrade() -> None:
     # ------------------------------------------------------------------
     # Step 3b: media_assets — NOT NULL + FK + user_id index
     # ------------------------------------------------------------------
-    with op.batch_alter_table("media_assets", recreate="always") as batch_op:
+    with op.batch_alter_table("media_assets") as batch_op:
         batch_op.alter_column("user_id", existing_type=sa.BigInteger(), nullable=False)
         batch_op.create_foreign_key(
             "fk_media_assets_user_id", "users", ["user_id"], ["telegram_id"]
@@ -85,7 +93,7 @@ def upgrade() -> None:
     # ------------------------------------------------------------------
     # Step 3c: morning_blessings — NOT NULL + FK + composite unique + user_id index
     # ------------------------------------------------------------------
-    with op.batch_alter_table("morning_blessings", recreate="always") as batch_op:
+    with op.batch_alter_table("morning_blessings") as batch_op:
         batch_op.alter_column("user_id", existing_type=sa.BigInteger(), nullable=False)
         batch_op.create_foreign_key(
             "fk_morning_blessings_user_id", "users", ["user_id"], ["telegram_id"]
@@ -100,7 +108,7 @@ def upgrade() -> None:
     # ------------------------------------------------------------------
     # Step 3d: motivational_images — NOT NULL + FK + user_id index
     # ------------------------------------------------------------------
-    with op.batch_alter_table("motivational_images", recreate="always") as batch_op:
+    with op.batch_alter_table("motivational_images") as batch_op:
         batch_op.alter_column("user_id", existing_type=sa.BigInteger(), nullable=False)
         batch_op.create_foreign_key(
             "fk_motivational_images_user_id", "users", ["user_id"], ["telegram_id"]
@@ -126,13 +134,13 @@ def downgrade() -> None:
         batch_op.drop_column("user_id")
 
     # motivational_images — drop index, FK, and user_id column
-    with op.batch_alter_table("motivational_images", recreate="always") as batch_op:
+    with op.batch_alter_table("motivational_images") as batch_op:
         batch_op.drop_index("ix_motivational_images_user_id")
         batch_op.drop_constraint("fk_motivational_images_user_id", type_="foreignkey")
         batch_op.drop_column("user_id")
 
     # morning_blessings — restore global unique, drop composite unique, FK, index, and column
-    with op.batch_alter_table("morning_blessings", recreate="always") as batch_op:
+    with op.batch_alter_table("morning_blessings") as batch_op:
         batch_op.drop_index("ix_morning_blessings_user_id")
         batch_op.drop_constraint("fk_morning_blessings_user_id", type_="foreignkey")
         batch_op.drop_constraint("uq_morning_blessings_user_rotation", type_="unique")
@@ -140,13 +148,13 @@ def downgrade() -> None:
         batch_op.drop_column("user_id")
 
     # media_assets — drop index, FK, and user_id column; restore ix_practices_active
-    with op.batch_alter_table("media_assets", recreate="always") as batch_op:
+    with op.batch_alter_table("media_assets") as batch_op:
         batch_op.drop_index("ix_media_assets_user_id")
         batch_op.drop_constraint("fk_media_assets_user_id", type_="foreignkey")
         batch_op.drop_column("user_id")
 
     # practices — swap composite index back to single-column, drop FK and user_id column
-    with op.batch_alter_table("practices", recreate="always") as batch_op:
+    with op.batch_alter_table("practices") as batch_op:
         batch_op.drop_index("ix_practices_user_active")
         batch_op.create_index("ix_practices_active", ["active"])
         batch_op.drop_constraint("fk_practices_user_id", type_="foreignkey")

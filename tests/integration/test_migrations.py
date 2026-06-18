@@ -245,13 +245,16 @@ async def test_0010_backfill_and_round_trip(pg_engine) -> None:
                 "VALUES (:tid, 'ru', now(), now())"
             ).bindparams(tid=tg_id)
         )
-        # Insert a practice row (no user_id column yet at 0009)
+        # Insert a practice row (no user_id column yet at 0009).
+        # practices.id is a Postgres `uuid` column; asyncpg rejects a bare str
+        # ("column id is of type uuid but expression is of type character varying"),
+        # so cast the bound parameter explicitly.
         p_id = str(_uuid.uuid4())
         await conn.execute(
             text(
                 "INSERT INTO practices "
                 "(id, name, content_type, periodicity_type, active, sort_order, created_at, updated_at) "
-                "VALUES (:id, 'seed', 'text', 'fixed_times', true, 0, now(), now())"
+                "VALUES (CAST(:id AS uuid), 'seed', 'text', 'fixed_times', true, 0, now(), now())"
             ).bindparams(id=p_id)
         )
 
@@ -260,7 +263,7 @@ async def test_0010_backfill_and_round_trip(pg_engine) -> None:
 
     async with pg_engine.connect() as conn:
         row = await conn.execute(
-            text("SELECT user_id FROM practices WHERE id = :id").bindparams(id=p_id)
+            text("SELECT user_id FROM practices WHERE id = CAST(:id AS uuid)").bindparams(id=p_id)
         )
         user_id_val = row.scalar()
 
