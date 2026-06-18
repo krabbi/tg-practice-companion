@@ -49,9 +49,6 @@ class Config(BaseSettings):
     # "https://a.com,https://b.com" is not valid JSON and would raise at the source level.
     cors_origins: Annotated[list[str], NoDecode] = []
 
-    # Media storage — path on disk where uploaded audio/images are persisted (B4)
-    media_storage_dir: str = "/data/media"
-
     # S3-compatible object storage (Backblaze B2 / AWS-portable); all optional so the bot
     # starts without them — gateway is only constructed in web/CLI wiring (S1).
     s3_endpoint_url: str = ""

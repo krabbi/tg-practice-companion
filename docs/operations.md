@@ -419,6 +419,70 @@ authentication works identically.
 
 ---
 
+## Backblaze B2 media storage setup
+
+Media files (audio practices, motivational images) uploaded through the web admin are stored
+in an S3-compatible Backblaze B2 bucket. The bot service does **not** need these credentials —
+only the `web` Docker Compose service uses them.
+
+### 1. Create a B2 bucket
+
+1. Sign in to [backblaze.com](https://www.backblaze.com) → **B2 Cloud Storage** → **Buckets**.
+2. Click **Create a Bucket**:
+   - **Bucket name**: choose a globally unique name (e.g. `my-practice-media`).
+   - **Files in bucket are**: **Private** (objects are never publicly accessible; access is via presigned URLs).
+   - Leave all other settings at their defaults.
+3. Note the **Endpoint** shown on the bucket detail page — it looks like
+   `s3.us-west-004.backblazeb2.com`.  The region is the part after `s3.` and before
+   `.backblazeb2.com` (e.g. `us-west-004`).
+
+### 2. Create an application key (scoped to the bucket)
+
+**Do not use the master application key.** Create a dedicated key scoped only to this bucket:
+
+1. Go to **Account** → **Application Keys** → **Add a New Application Key**.
+2. **Name of Key**: e.g. `practice-web`.
+3. **Allow access to Bucket(s)**: select the bucket you just created.
+4. **Type of Access**: **Read and Write**.
+5. Leave **File name prefix** and **Duration** empty (no expiry).
+6. Click **Create New Key** and **immediately copy both values**:
+   - **keyID** → this is `S3_ACCESS_KEY_ID`
+   - **applicationKey** → this is `S3_SECRET_ACCESS_KEY` (shown only once)
+
+### 3. Find the S3 endpoint and region
+
+From the bucket detail page:
+- **Endpoint**: `https://s3.<region>.backblazeb2.com` — copy the full HTTPS URL.
+- **Region**: the `<region>` portion, e.g. `us-west-004`.
+
+### 4. Set the required environment variables
+
+Add the following to `.env` (web service only; the bot service ignores them):
+
+```bash
+S3_ENDPOINT_URL=https://s3.us-west-004.backblazeb2.com   # full HTTPS URL from step 3
+S3_REGION=us-west-004                                     # region from step 3
+S3_BUCKET=my-practice-media                               # bucket name from step 1
+S3_ACCESS_KEY_ID=your-application-key-id                  # keyID from step 2
+S3_SECRET_ACCESS_KEY=your-application-key                 # applicationKey from step 2
+S3_PRESIGN_EXPIRY_SECONDS=900                             # optional; default 900 (15 min)
+MEDIA_MAX_UPLOAD_BYTES=10485760                           # optional; default 10 MB
+```
+
+### 5. Notes
+
+- **SigV4 only.** Backblaze B2 accepts only AWS Signature Version 4 — boto3 (used by the
+  service) sends SigV4 by default, so no special configuration is needed.
+- **10 MB upload limit** is enforced at the API layer (`MEDIA_MAX_UPLOAD_BYTES`); B2 itself
+  has a 5 GB object limit, so the application limit is the binding constraint.
+- **Portability to AWS S3.** Swap `S3_ENDPOINT_URL` (remove it or set it to
+  `https://s3.amazonaws.com`), `S3_REGION` (e.g. `us-east-1`), `S3_BUCKET`, and the key
+  pair.  No code changes required.
+- **No local media volume.** There is no `practice_media` Docker volume or
+  `MEDIA_STORAGE_DIR` in this deployment. All media objects live in B2.
+
+---
+
 ## Web admin deploy (Stage 2, AC-19)
 
 The web admin runs as two Docker Compose services under the `web` profile:
@@ -445,7 +509,8 @@ openssl rand -hex 32
 #   CORS_ORIGINS=https://admin.yourdomain.example.com
 #   NGINX_PORT=4100
 #   WEB_APP_URL=https://admin.yourdomain.example.com
-#   MEDIA_STORAGE_DIR=/data/media   # default; matches the Docker volume mount
+#   S3_ENDPOINT_URL, S3_REGION, S3_BUCKET, S3_ACCESS_KEY_ID, S3_SECRET_ACCESS_KEY
+#   (see "Backblaze B2 media storage setup" section above for details)
 
 # 3. Build the Vue SPA (produces frontend/dist/)
 cd frontend && npm ci && npm run build && cd ..
@@ -504,7 +569,13 @@ The new `frontend/dist/` files are picked up on nginx restart (bind-mounted from
 | `WEB_PORT` | no | `8000` | Internal uvicorn port (used only inside Docker network) |
 | `NGINX_PORT` | no | `4100` | Host port nginx listens on; host proxy maps domain → this |
 | `WEB_APP_URL` | no | `""` | HTTPS URL of the deployed SPA; required for `/admin` TMA button |
-| `MEDIA_STORAGE_DIR` | no | `/data/media` | Path inside the container where media files are stored |
+| `S3_ENDPOINT_URL` | yes | — | Full HTTPS endpoint, e.g. `https://s3.us-west-004.backblazeb2.com` |
+| `S3_REGION` | yes | — | S3 region name, e.g. `us-west-004` |
+| `S3_BUCKET` | yes | — | S3 bucket name |
+| `S3_ACCESS_KEY_ID` | yes | — | S3 / B2 application key ID |
+| `S3_SECRET_ACCESS_KEY` | yes | — | S3 / B2 application key secret |
+| `S3_PRESIGN_EXPIRY_SECONDS` | no | `900` | Presigned URL TTL in seconds (15 min) |
+| `MEDIA_MAX_UPLOAD_BYTES` | no | `10485760` | Maximum upload size (10 MB) |
 
 ---
 
