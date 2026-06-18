@@ -64,13 +64,25 @@ jobs:
           prompt: |
             You are the coder agent for the tg-practice-companion project.
             PR #${{ github.event.pull_request.number }} (branch:
-            ${{ github.event.pull_request.head.ref }}) has received code review
-            feedback requesting changes.
+            ${{ github.event.pull_request.head.ref }}) was labeled
+            code-changes-requested. This happens for ONE of two reasons:
+              (a) the code reviewer requested changes, OR
+              (b) the merge gate found a FAILED CI check and routed the PR back
+                  here (look for an "[AUTOBOT CI FAILURE]" comment).
+            Handle whichever applies — possibly both.
 
             Steps:
-            1. Read the latest review comment on PR #${{ github.event.pull_request.number }}
+            1. Read the review + comments on PR #${{ github.event.pull_request.number }}
                with: gh pr view ${{ github.event.pull_request.number }} --json reviews,comments
-            2. Fix every blocking issue raised by the reviewer.
+            2a. Fix every blocking issue raised by the reviewer.
+            2b. If an "[AUTOBOT CI FAILURE]" comment is present, the CI checks
+                actually failed. Inspect the failing run logs to find the root cause:
+                  gh pr checks ${{ github.event.pull_request.number }}
+                  gh run view <run-id> --log-failed
+                then fix it. The 'test' job runs against real Postgres — reproduce
+                Postgres-only failures (FK drop order, batch_alter_table recreate on
+                tables with dependent FKs, uuid/type casts) rather than trusting the
+                local sqlite run.
             3. Run: make lint && make format
                If bot/ has real modules (any .py besides __init__.py): also run
                pytest --collect-only to confirm tests collect cleanly.
