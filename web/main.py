@@ -32,17 +32,11 @@ def create_app(config: Config | None = None) -> FastAPI:
 
     session_factory = build_session_factory(config.database_url)
 
-    # Build S3 storage service only when all required vars are present; absent in Stage 1.
-    storage_service: S3StorageService | None = None
-    if config.s3_bucket and config.s3_access_key_id and config.s3_secret_access_key:
-        storage_service = S3StorageService.from_config(config)
-
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         from aiogram import Bot
 
         app.state.session_factory = session_factory
-        app.state.storage_service = storage_service
         # Create a Bot for Telegram file uploads unless one was injected externally (e.g. tests).
         own_bot = not getattr(app.state, "bot", None)
         if own_bot:
@@ -53,8 +47,15 @@ def create_app(config: Config | None = None) -> FastAPI:
             if own_bot and getattr(app.state, "bot", None):
                 await app.state.bot.session.close()
 
+    # Build S3 storage service only when all required vars are present; absent in Stage 1.
+    storage_service: S3StorageService | None = None
+    if config.s3_bucket and config.s3_access_key_id and config.s3_secret_access_key:
+        storage_service = S3StorageService.from_config(config)
+
     app = FastAPI(title="tg-practice-companion web", lifespan=lifespan)
     app.state.config = config
+    # Set before lifespan so tests can override by setting app.state.storage_service after create_app.
+    app.state.storage_service = storage_service
 
     if config.cors_origins:
         app.add_middleware(

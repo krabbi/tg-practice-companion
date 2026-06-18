@@ -21,13 +21,13 @@ See `CLAUDE.md` for the layer rules and `.claude/coding-patterns.md` for code pa
 
 ### `media_assets` (M1)
 
-Owned media entity for audio/image practices. Stage 1 populates `telegram_file_id`; `storage_path` stays null until Stage 2 TMA upload flow.
+Owned media entity for audio/image practices. Stage 1 populates `telegram_file_id`; `storage_path` stays null until Stage 2 TMA upload flow. From S2 onwards `storage_path` holds the **S3 object key** (e.g. `image/<uuid>.jpg`) — no scheme, no leading slash.
 
 | Column | Type | Nullable | Default | Notes |
 |---|---|---|---|---|
 | `id` | `UUID` | NO | `uuid4()` | Primary key |
 | `kind` | `Enum(audio, image)` | NO | — | Media type |
-| `storage_path` | `String(512)` | YES | — | Object-store/filesystem path; null in Stage 1 |
+| `storage_path` | `String(512)` | YES | — | S3 object key (`kind/<uuid><ext>`); null in Stage 1 |
 | `telegram_file_id` | `String(256)` | YES | — | Stored Telegram file ID for re-sending (AC-2) |
 | `mime` | `String(128)` | YES | — | MIME type, e.g. `audio/mpeg` |
 | `created_at` | `DateTime(tz=True)` | NO | `now()` | Row creation timestamp |
@@ -314,7 +314,7 @@ The journal catch-all carries `StateFilter(None)` so it yields whenever an FSM s
 |---|---|---|
 | `PracticeService` | `bot/services/practice_service.py` | Active practice queries, `due_now` evaluation |
 | `PracticeAdminService` | `bot/services/practice_admin_service.py` | Web admin CRUD: `create`, `update`, `delete`, `get`, `list_all`; owns `commit()`; validates `fixed_times` HH:MM format, `every_n_hours` requires `interval_hours`, anchor-window check |
-| `MediaAdminService` | `bot/services/media_service.py` | Upload file bytes to disk, send to Telegram to capture `telegram_file_id`, upsert `MediaAsset` row; manage motivational-image pool; owns `commit()`. Bot injected as optional (None → Telegram step skipped in tests). |
+| `MediaAdminService` | `bot/services/media_service.py` | Upload file bytes to S3 (`put_object`), send to Telegram to capture `telegram_file_id`, upsert `MediaAsset` row (storage_path = S3 key); manage motivational-image pool; owns `commit()`. `S3StorageService` injected. Bot injected as optional (None → Telegram step skipped in tests). On Telegram failure after S3 PUT: best-effort `delete_object` then re-raise. On delete: best-effort `delete_object` after row commit. |
 | `DeliveryService` | `bot/services/delivery_service.py` | Renders and sends a practice; writes `pending_prompt` for `question` practices |
 | `TimezoneService` | `bot/services/timezone_service.py` | Validate IANA timezone, persist, stamp `tz_changed_at` |
 | `SkipDayService` | `bot/services/skip_day_service.py` | Set `skip_until = local today`, commit |
