@@ -51,6 +51,10 @@ For large or risky **architecture forks**, the OPERATOR manually runs
 subscription ralplan defaults to Opus and burns the weekly cap — it is an
 occasional luxury, not a routine step.
 
+When ralplan creates the chain's issues directly (bypassing `product-manager`), the dependency
+markers MUST still follow the exact `Blocked by #N` format — see `CLAUDE.md` → "GitHub issues —
+blocker format". A mis-styled marker makes the chain driver release issues out of order.
+
 ### Merge gates
 
 - Every PR needs `pr-reviewer` **APPROVED** before merge.

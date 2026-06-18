@@ -100,6 +100,30 @@ Example: `feat: add skip-day command (#23)`
 
 ---
 
+## GitHub issues — blocker format
+
+The repo is issue-driven: the autobot chain driver (`claude-chain-driver.yml`) promotes a
+`claude-queued` issue to `claude-ready` only once **every** issue it depends on is closed. It
+discovers dependencies by parsing the issue body with the regex `blocked by #[0-9]+`. **Whenever
+you create an issue** that depends on another — via the `product-manager` agent **or** directly
+during ralplan / by hand — declare each dependency on its **own line**, exactly:
+
+```
+Blocked by #N
+```
+
+(`Blocked by #N, #M` for several.) A **single space** between `by` and `#` is mandatory.
+
+- ❌ `**Blocked by:** #42` — the `:` / `**` break `by #`; the driver sees **no blockers** and
+  releases the issue out of order.
+- ❌ Marker on a line that holds other `#`-references (e.g. `Part of epic #65.`) — the driver
+  captures **every** `#N` on that line and treats them all as blockers. Keep it on a dedicated line.
+- ✅ A standalone `Blocked by #67` line; human-readable prose about dependencies may live elsewhere.
+
+Full chain-enrolment protocol: `docs/operations.md` → "Autobot chain driver".
+
+---
+
 ## Documentation — update rules
 
 When your change affects any of the following, update the corresponding file **in the same PR**:
