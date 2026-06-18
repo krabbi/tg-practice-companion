@@ -37,10 +37,10 @@ async def test_list_all_delegates_to_repo() -> None:
     expected = [_make_blessing(rotation_order=1), _make_blessing(rotation_order=2)]
     repo.list_all.return_value = expected
 
-    result = await service.list_all()
+    result = await service.list_all(_USER_ID)
 
     assert result == expected
-    repo.list_all.assert_awaited_once()
+    repo.list_all.assert_awaited_once_with(_USER_ID)
 
 
 async def test_create_appends_to_end_and_commits() -> None:
@@ -95,9 +95,9 @@ async def test_update_found_commits_and_returns() -> None:
     blessing = _make_blessing()
     repo.update.return_value = blessing
 
-    result = await service.update(blessing.id, text="New text", active=False)
+    result = await service.update(blessing.id, _USER_ID, text="New text", active=False)
 
-    repo.update.assert_awaited_once_with(blessing.id, text="New text", active=False)
+    repo.update.assert_awaited_once_with(blessing.id, _USER_ID, text="New text", active=False)
     session.commit.assert_awaited_once()
     assert result is blessing
 
@@ -107,7 +107,7 @@ async def test_update_not_found_returns_none_without_commit() -> None:
     service, session, repo = _make_service()
     repo.update.return_value = None
 
-    result = await service.update(uuid.uuid4(), text="x")
+    result = await service.update(uuid.uuid4(), _USER_ID, text="x")
 
     assert result is None
     session.commit.assert_not_awaited()
@@ -118,7 +118,7 @@ async def test_delete_found_commits_and_returns_true() -> None:
     service, session, repo = _make_service()
     repo.delete.return_value = True
 
-    result = await service.delete(uuid.uuid4())
+    result = await service.delete(uuid.uuid4(), _USER_ID)
 
     assert result is True
     session.commit.assert_awaited_once()
@@ -129,7 +129,7 @@ async def test_delete_not_found_returns_false_without_commit() -> None:
     service, session, repo = _make_service()
     repo.delete.return_value = False
 
-    result = await service.delete(uuid.uuid4())
+    result = await service.delete(uuid.uuid4(), _USER_ID)
 
     assert result is False
     session.commit.assert_not_awaited()
@@ -143,9 +143,9 @@ async def test_reorder_validates_and_commits() -> None:
     repo.list_all.return_value = [b1, b2]
     repo.reorder.return_value = [b2, b1]
 
-    result = await service.reorder([b2.id, b1.id])
+    result = await service.reorder([b2.id, b1.id], _USER_ID)
 
-    repo.reorder.assert_awaited_once_with([b2.id, b1.id])
+    repo.reorder.assert_awaited_once_with([b2.id, b1.id], _USER_ID)
     session.commit.assert_awaited_once()
     assert result == [b2, b1]
 
@@ -157,7 +157,7 @@ async def test_reorder_raises_for_unknown_ids() -> None:
     repo.list_all.return_value = [b1]
 
     with pytest.raises(ValueError, match="Unknown blessing IDs"):
-        await service.reorder([b1.id, uuid.uuid4()])
+        await service.reorder([b1.id, uuid.uuid4()], _USER_ID)
 
 
 async def test_reorder_raises_for_missing_ids() -> None:
@@ -168,4 +168,4 @@ async def test_reorder_raises_for_missing_ids() -> None:
     repo.list_all.return_value = [b1, b2]
 
     with pytest.raises(ValueError, match="Missing blessing IDs"):
-        await service.reorder([b1.id])
+        await service.reorder([b1.id], _USER_ID)

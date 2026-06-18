@@ -28,20 +28,21 @@ class WantAdminService:
     async def update(
         self,
         item_id: uuid.UUID,
+        user_id: int,
         *,
         text: str | None = None,
         done: bool | None = None,
     ) -> WantListItem | None:
-        """Update text and/or done; commit and return item, or None if not found."""
-        item = await self._repo.update(item_id, text=text, done=done)
+        """Update text and/or done for user_id; commit and return item, or None if not found/not owned."""
+        item = await self._repo.update(item_id, user_id, text=text, done=done)
         if item is None:
             return None
         await self._session.commit()
         return item
 
-    async def delete(self, item_id: uuid.UUID) -> bool:
-        """Delete item by id; commit and return True, or False if not found."""
-        found = await self._repo.delete(item_id)
+    async def delete(self, item_id: uuid.UUID, user_id: int) -> bool:
+        """Delete item for user_id; commit and return True, or False if not found/not owned."""
+        found = await self._repo.delete(item_id, user_id)
         if found:
             await self._session.commit()
         return found

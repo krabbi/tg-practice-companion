@@ -25,7 +25,7 @@ async def test_want_list_create_and_get(db_session: AsyncSession) -> None:
     item = await repo.create(user_id=111, text="Buy a guitar")
     await db_session.commit()
 
-    fetched = await repo.get_by_id(item.id)
+    fetched = await repo.get_by_id(item.id, 111)
     assert fetched is not None
     assert fetched.id == item.id
     assert fetched.text == "Buy a guitar"
@@ -37,7 +37,7 @@ async def test_want_list_create_and_get(db_session: AsyncSession) -> None:
 async def test_want_list_get_by_id_returns_none_for_unknown(db_session: AsyncSession) -> None:
     """get_by_id returns None for a non-existent id."""
     repo = WantListRepository(db_session)
-    result = await repo.get_by_id(uuid.uuid4())
+    result = await repo.get_by_id(uuid.uuid4(), 111)
     assert result is None
 
 
@@ -77,13 +77,13 @@ async def test_want_list_mark_done(db_session: AsyncSession) -> None:
     await db_session.commit()
     assert item.done is False
 
-    updated = await repo.mark_done(item.id)
+    updated = await repo.mark_done(item.id, 444)
     await db_session.commit()
 
     assert updated is not None
     assert updated.done is True
 
-    fetched = await repo.get_by_id(item.id)
+    fetched = await repo.get_by_id(item.id, 444)
     assert fetched is not None
     assert fetched.done is True
 
@@ -92,7 +92,7 @@ async def test_want_list_mark_done(db_session: AsyncSession) -> None:
 async def test_want_list_mark_done_returns_none_for_unknown(db_session: AsyncSession) -> None:
     """mark_done returns None when the item does not exist."""
     repo = WantListRepository(db_session)
-    result = await repo.mark_done(uuid.uuid4())
+    result = await repo.mark_done(uuid.uuid4(), 444)
     assert result is None
 
 
@@ -104,18 +104,18 @@ async def test_want_list_delete(db_session: AsyncSession) -> None:
     item = await repo.create(user_id=555, text="Travel to Japan")
     await db_session.commit()
 
-    deleted = await repo.delete(item.id)
+    deleted = await repo.delete(item.id, 555)
     await db_session.commit()
 
     assert deleted is True
-    assert await repo.get_by_id(item.id) is None
+    assert await repo.get_by_id(item.id, 555) is None
 
 
 @pytest.mark.asyncio
 async def test_want_list_delete_returns_false_for_unknown(db_session: AsyncSession) -> None:
     """delete returns False when the item does not exist."""
     repo = WantListRepository(db_session)
-    result = await repo.delete(uuid.uuid4())
+    result = await repo.delete(uuid.uuid4(), 555)
     assert result is False
 
 

@@ -1,13 +1,15 @@
 """Integration tests for PracticeRepository using aiosqlite :memory: DB.
 
 Covers:
-- get_active_practices: returns only active rows, ordered by sort_order
+- get_active_practices: returns only active rows, ordered by sort_order, scoped to user
 - get_active_practices: eagerly loads media_asset
 - get_by_id: returns practice for known UUID, None for unknown
-- get_by_name: returns practice for known name, None for unknown
+- get_by_name: returns practice for known name for user, None for unknown or wrong user
 - save: flushes and refreshes a new practice
-- get_media_asset_by_id: returns asset for known UUID, None for unknown
+- get_media_asset_by_id: returns asset for known UUID and user, None for unknown or wrong user
 - save_media_asset: flushes and refreshes a new asset
+- list_all: scoped to user, user B rows not returned to user A
+- delete: scoped to user, returns False for wrong user
 """
 
 import uuid
@@ -16,6 +18,7 @@ import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bot.models.practice import MediaAsset, Practice
+from bot.models.user import User
 from bot.repositories.practice_repository import PracticeRepository
 
 # ---------------------------------------------------------------------------
@@ -24,6 +27,13 @@ from bot.repositories.practice_repository import PracticeRepository
 
 
 TEST_USER_ID = 123456789
+OTHER_USER_ID = 999888777
+
+
+async def _seed_user(session: AsyncSession, telegram_id: int) -> None:
+    user = User(telegram_id=telegram_id, language="ru")
+    session.add(user)
+    await session.flush()
 
 
 def make_practice(
@@ -77,7 +87,7 @@ async def test_get_active_practices_returns_only_active(db_session: AsyncSession
     db_session.add(inactive)
     await db_session.flush()
 
-    result = await repo.get_active_practices()
+    result = await repo.get_active_practices(TEST_USER_ID)
 
     names = {p.name for p in result}
     assert "active practice" in names
@@ -97,7 +107,7 @@ async def test_get_active_practices_ordered_by_sort_order(db_session: AsyncSessi
     db_session.add(p3)
     await db_session.flush()
 
-    result = await repo.get_active_practices()
+    result = await repo.get_active_practices(TEST_USER_ID)
 
     names = [p.name for p in result]
     assert names == ["first", "second", "third"]
@@ -107,13 +117,35 @@ async def test_get_active_practices_ordered_by_sort_order(db_session: AsyncSessi
 async def test_get_active_practices_empty(db_session: AsyncSession) -> None:
     """get_active_practices returns empty list when no active practices exist."""
     repo = PracticeRepository(db_session)
-    result = await repo.get_active_practices()
+    result = await repo.get_active_practices(TEST_USER_ID)
     assert result == []
+
+
+@pytest.mark.asyncio
+async def test_get_active_practices_user_isolation(db_session: AsyncSession) -> None:
+    """get_active_practices returns only practices for the given user."""
+    await _seed_user(db_session, TEST_USER_ID)
+    await _seed_user(db_session, OTHER_USER_ID)
+    repo = PracticeRepository(db_session)
+
+    p_mine = make_practice(name="mine", active=True)
+    p_other = make_practice(name="other", active=True)
+    p_other.user_id = OTHER_USER_ID
+    db_session.add(p_mine)
+    db_session.add(p_other)
+    await db_session.flush()
+
+    result = await repo.get_active_practices(TEST_USER_ID)
+
+    names = {p.name for p in result}
+    assert "mine" in names
+    assert "other" not in names
 
 
 @pytest.mark.asyncio
 async def test_get_active_practices_loads_media_asset(db_session: AsyncSession) -> None:
     """get_active_practices eagerly loads media_asset relationship."""
+    await _seed_user(db_session, TEST_USER_ID)
     repo = PracticeRepository(db_session)
 
     asset = make_media_asset()
@@ -126,7 +158,7 @@ async def test_get_active_practices_loads_media_asset(db_session: AsyncSession) 
     db_session.add(p)
     await db_session.flush()
 
-    result = await repo.get_active_practices()
+    result = await repo.get_active_practices(TEST_USER_ID)
 
     assert len(result) == 1
     # media_asset should be loaded (not a lazy-load placeholder)
@@ -175,7 +207,7 @@ async def test_get_by_name_returns_practice(db_session: AsyncSession) -> None:
     db_session.add(p)
     await db_session.flush()
 
-    found = await repo.get_by_name("unique name")
+    found = await repo.get_by_name("unique name", TEST_USER_ID)
     assert found is not None
     assert found.id == p.id
 
@@ -184,7 +216,23 @@ async def test_get_by_name_returns_practice(db_session: AsyncSession) -> None:
 async def test_get_by_name_returns_none_for_unknown(db_session: AsyncSession) -> None:
     """get_by_name returns None when no practice has the given name."""
     repo = PracticeRepository(db_session)
-    result = await repo.get_by_name("does not exist")
+    result = await repo.get_by_name("does not exist", TEST_USER_ID)
+    assert result is None
+
+
+@pytest.mark.asyncio
+async def test_get_by_name_user_isolation(db_session: AsyncSession) -> None:
+    """get_by_name returns None when the practice exists but belongs to another user."""
+    await _seed_user(db_session, TEST_USER_ID)
+    await _seed_user(db_session, OTHER_USER_ID)
+    repo = PracticeRepository(db_session)
+
+    p = make_practice(name="shared name")
+    p.user_id = OTHER_USER_ID
+    db_session.add(p)
+    await db_session.flush()
+
+    result = await repo.get_by_name("shared name", TEST_USER_ID)
     assert result is None
 
 
@@ -219,7 +267,7 @@ async def test_get_media_asset_by_id_returns_asset(db_session: AsyncSession) -> 
     db_session.add(asset)
     await db_session.flush()
 
-    found = await repo.get_media_asset_by_id(asset.id)
+    found = await repo.get_media_asset_by_id(asset.id, TEST_USER_ID)
     assert found is not None
     assert found.id == asset.id
 
@@ -228,7 +276,23 @@ async def test_get_media_asset_by_id_returns_asset(db_session: AsyncSession) -> 
 async def test_get_media_asset_by_id_returns_none_for_unknown(db_session: AsyncSession) -> None:
     """get_media_asset_by_id returns None for a UUID that does not exist."""
     repo = PracticeRepository(db_session)
-    result = await repo.get_media_asset_by_id(uuid.uuid4())
+    result = await repo.get_media_asset_by_id(uuid.uuid4(), TEST_USER_ID)
+    assert result is None
+
+
+@pytest.mark.asyncio
+async def test_get_media_asset_by_id_user_isolation(db_session: AsyncSession) -> None:
+    """get_media_asset_by_id returns None when asset belongs to another user."""
+    await _seed_user(db_session, TEST_USER_ID)
+    await _seed_user(db_session, OTHER_USER_ID)
+    repo = PracticeRepository(db_session)
+
+    asset = make_media_asset()
+    asset.user_id = OTHER_USER_ID
+    db_session.add(asset)
+    await db_session.flush()
+
+    result = await repo.get_media_asset_by_id(asset.id, TEST_USER_ID)
     assert result is None
 
 

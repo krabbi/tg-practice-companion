@@ -21,22 +21,28 @@ class MediaAssetRepository:
         await self._session.refresh(asset)
         return asset
 
-    async def list_all(self, kind: str | None = None) -> list[MediaAsset]:
-        """Return all MediaAsset rows ordered by creation time, optionally filtered by kind."""
-        query = select(MediaAsset).order_by(MediaAsset.created_at.desc())
+    async def list_all(self, user_id: int, kind: str | None = None) -> list[MediaAsset]:
+        """Return all MediaAsset rows for user_id ordered by creation time, optionally filtered by kind."""
+        query = (
+            select(MediaAsset)
+            .where(MediaAsset.user_id == user_id)
+            .order_by(MediaAsset.created_at.desc())
+        )
         if kind is not None:
             query = query.where(MediaAsset.kind == kind)
         result = await self._session.execute(query)
         return list(result.scalars().all())
 
-    async def get(self, asset_id: uuid.UUID) -> MediaAsset | None:
-        """Return a MediaAsset by its UUID, or None."""
-        result = await self._session.execute(select(MediaAsset).where(MediaAsset.id == asset_id))
+    async def get(self, asset_id: uuid.UUID, user_id: int) -> MediaAsset | None:
+        """Return a MediaAsset by its UUID for the given user, or None."""
+        result = await self._session.execute(
+            select(MediaAsset).where(MediaAsset.id == asset_id, MediaAsset.user_id == user_id)
+        )
         return result.scalar_one_or_none()
 
-    async def delete(self, asset_id: uuid.UUID) -> bool:
-        """Delete a MediaAsset by UUID and flush. Returns False when not found."""
-        asset = await self.get(asset_id)
+    async def delete(self, asset_id: uuid.UUID, user_id: int) -> bool:
+        """Delete a MediaAsset by UUID for the given user and flush. Returns False when not found or not owned."""
+        asset = await self.get(asset_id, user_id)
         if asset is None:
             return False
         await self._session.delete(asset)

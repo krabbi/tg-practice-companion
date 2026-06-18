@@ -5,7 +5,7 @@ import uuid
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from bot.models.journal import SelfAssessment
+from bot.models.journal import JournalEntry, SelfAssessment
 
 
 class SelfAssessmentRepository:
@@ -32,9 +32,16 @@ class SelfAssessmentRepository:
         await self._session.refresh(assessment)
         return assessment
 
-    async def get_by_entry_id(self, journal_entry_id: uuid.UUID) -> SelfAssessment | None:
-        """Return the SelfAssessment for the given journal entry, or None."""
+    async def get_by_entry_id(
+        self, journal_entry_id: uuid.UUID, user_id: int
+    ) -> SelfAssessment | None:
+        """Return the SelfAssessment for the given journal entry owned by user_id, or None."""
         result = await self._session.execute(
-            select(SelfAssessment).where(SelfAssessment.journal_entry_id == journal_entry_id)
+            select(SelfAssessment)
+            .join(JournalEntry, JournalEntry.id == SelfAssessment.journal_entry_id)
+            .where(
+                SelfAssessment.journal_entry_id == journal_entry_id,
+                JournalEntry.user_id == user_id,
+            )
         )
         return result.scalar_one_or_none()

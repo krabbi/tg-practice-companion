@@ -91,25 +91,25 @@ class MediaAdminService:
         await self._session.commit()
         return asset
 
-    async def list_assets(self, kind: str | None = None) -> list[MediaAsset]:
-        """Return all media assets, optionally filtered by kind."""
-        return await self._repo.list_all(kind)
+    async def list_assets(self, user_id: int, kind: str | None = None) -> list[MediaAsset]:
+        """Return all media assets for user_id, optionally filtered by kind."""
+        return await self._repo.list_all(user_id, kind)
 
-    async def get_asset(self, asset_id: uuid.UUID) -> MediaAsset | None:
-        """Return a single media asset by UUID, or None."""
-        return await self._repo.get(asset_id)
+    async def get_asset(self, asset_id: uuid.UUID, user_id: int) -> MediaAsset | None:
+        """Return a single media asset by UUID for user_id, or None."""
+        return await self._repo.get(asset_id, user_id)
 
     def generate_presigned_url(self, storage_path: str, expires_in: int) -> str:
         """Return a presigned S3 GET URL for *storage_path*."""
         return self._storage.generate_presigned_url(storage_path, expires_in)
 
-    async def delete_asset(self, asset_id: uuid.UUID) -> bool:
-        """Delete a MediaAsset row and its S3 object (best-effort). Returns False when not found."""
-        asset = await self._repo.get(asset_id)
+    async def delete_asset(self, asset_id: uuid.UUID, user_id: int) -> bool:
+        """Delete a MediaAsset row for user_id and its S3 object (best-effort). Returns False when not found or not owned."""
+        asset = await self._repo.get(asset_id, user_id)
         if asset is None:
             return False
         storage_path = asset.storage_path
-        await self._repo.delete(asset_id)
+        await self._repo.delete(asset_id, user_id)
         await self._session.commit()
         if storage_path is not None:
             try:
@@ -125,7 +125,7 @@ class MediaAdminService:
         active: bool = True,
     ) -> MotivationalImage:
         """Add a MediaAsset to the motivational-image pool and commit."""
-        asset = await self._repo.get(media_asset_id)
+        asset = await self._repo.get(media_asset_id, user_id)
         if asset is None:
             raise MediaAssetError(f"MediaAsset {media_asset_id} not found")
         if asset.kind != "image":

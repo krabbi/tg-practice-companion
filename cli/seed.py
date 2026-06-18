@@ -136,12 +136,14 @@ async def seed_practices(yaml_path: Path) -> None:
                 )
 
             practice, media_dict = _parse_practice(row, seed_user_id)
-            existing = await repo.get_by_name(name)
+            existing = await repo.get_by_name(name, seed_user_id)
 
             asset_id: uuid.UUID | None = None
             if media_dict is not None:
                 if existing is not None and existing.media_asset_id is not None:
-                    existing_asset = await repo.get_media_asset_by_id(existing.media_asset_id)
+                    existing_asset = await repo.get_media_asset_by_id(
+                        existing.media_asset_id, seed_user_id
+                    )
                     if existing_asset is not None:
                         existing_asset.telegram_file_id = media_dict["telegram_file_id"]
                         existing_asset.mime = media_dict["mime"]
@@ -214,7 +216,7 @@ async def seed_blessings(yaml_path: Path) -> None:
             text: str = row["text"]
             active: bool = row.get("active", True)
 
-            existing = await repo.get_by_rotation_order(rotation_order)
+            existing = await repo.get_by_rotation_order(rotation_order, seed_user_id)
             if existing is not None:
                 existing.text = text
                 existing.active = active
@@ -319,7 +321,7 @@ async def seed_images(yaml_path: Path, *, bot: object | None = None) -> None:
                     logger.info("Created media_asset id=%s", asset_id)
 
                 # Upsert motivational_image row
-                existing_img = await image_repo.get_by_media_asset_id(asset_id)
+                existing_img = await image_repo.get_by_media_asset_id(asset_id, upload_chat_id)
                 if existing_img is not None:
                     existing_img.active = active
                     await image_repo.save(existing_img)
@@ -391,7 +393,7 @@ async def seed_audio(yaml_path: Path, *, bot: object | None = None) -> None:
                     logger.error("Audio file not found: %s — skipping", local_path)
                     continue
 
-                practice = await repo.get_by_name(name)
+                practice = await repo.get_by_name(name, upload_chat_id)
                 if practice is None:
                     logger.error("Practice %r not found — seed practices first, then audio", name)
                     continue
@@ -407,7 +409,9 @@ async def seed_audio(yaml_path: Path, *, bot: object | None = None) -> None:
 
                 # Upsert media_asset
                 if practice.media_asset_id is not None:
-                    existing_asset = await repo.get_media_asset_by_id(practice.media_asset_id)
+                    existing_asset = await repo.get_media_asset_by_id(
+                        practice.media_asset_id, upload_chat_id
+                    )
                     if existing_asset is not None:
                         existing_asset.telegram_file_id = telegram_file_id
                         existing_asset.mime = mime

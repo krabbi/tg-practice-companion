@@ -17,7 +17,10 @@ def _make_service() -> tuple[WantAdminService, AsyncMock, AsyncMock]:
     return service, session, repo
 
 
-def _make_item(user_id: int = 123, text: str = "Test want") -> WantListItem:
+_USER_ID = 123
+
+
+def _make_item(user_id: int = _USER_ID, text: str = "Test want") -> WantListItem:
     item = WantListItem()
     item.id = uuid.uuid4()
     item.user_id = user_id
@@ -57,9 +60,9 @@ async def test_update_found_commits_and_returns() -> None:
     item = _make_item()
     repo.update.return_value = item
 
-    result = await service.update(item.id, text="Updated text", done=True)
+    result = await service.update(item.id, _USER_ID, text="Updated text", done=True)
 
-    repo.update.assert_awaited_once_with(item.id, text="Updated text", done=True)
+    repo.update.assert_awaited_once_with(item.id, _USER_ID, text="Updated text", done=True)
     session.commit.assert_awaited_once()
     assert result is item
 
@@ -69,7 +72,7 @@ async def test_update_not_found_returns_none_without_commit() -> None:
     service, session, repo = _make_service()
     repo.update.return_value = None
 
-    result = await service.update(uuid.uuid4(), text="x")
+    result = await service.update(uuid.uuid4(), _USER_ID, text="x")
 
     assert result is None
     session.commit.assert_not_awaited()
@@ -80,7 +83,7 @@ async def test_delete_found_commits_and_returns_true() -> None:
     service, session, repo = _make_service()
     repo.delete.return_value = True
 
-    result = await service.delete(uuid.uuid4())
+    result = await service.delete(uuid.uuid4(), _USER_ID)
 
     assert result is True
     session.commit.assert_awaited_once()
@@ -91,7 +94,7 @@ async def test_delete_not_found_returns_false_without_commit() -> None:
     service, session, repo = _make_service()
     repo.delete.return_value = False
 
-    result = await service.delete(uuid.uuid4())
+    result = await service.delete(uuid.uuid4(), _USER_ID)
 
     assert result is False
     session.commit.assert_not_awaited()

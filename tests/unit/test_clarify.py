@@ -79,7 +79,7 @@ async def test_needs_clarify_true_for_unanswered_thought_entry() -> None:
     entry = make_entry()
     svc, _, _ = make_assessment_svc(entry=entry, existing_assessment=None)
 
-    result = await svc.needs_clarify(entry.id)
+    result = await svc.needs_clarify(entry.id, 123)
 
     assert result is True
 
@@ -96,7 +96,7 @@ async def test_needs_clarify_false_after_assessment_recorded() -> None:
 
     svc, _, _ = make_assessment_svc(entry=entry, existing_assessment=existing)
 
-    result = await svc.needs_clarify(entry.id)
+    result = await svc.needs_clarify(entry.id, 123)
 
     assert result is False
 
@@ -130,8 +130,9 @@ async def test_no_llm_calls_in_clarify_flow() -> None:
     mock_llm.complete = AsyncMock()
 
     # Run needs_clarify and record
-    await svc.needs_clarify(entry.id)
+    await svc.needs_clarify(entry.id, 123)
     await svc.record(
+        user_id=123,
         journal_entry_id=entry.id,
         leads_to_goals=True,
         set_via="clarify",
@@ -153,6 +154,7 @@ async def test_clarify_answer_sets_set_via_clarify() -> None:
     svc, assessment_repo, session = make_assessment_svc(entry=entry, existing_assessment=None)
 
     await svc.record(
+        user_id=123,
         journal_entry_id=entry.id,
         leads_to_goals=False,
         set_via="clarify",
@@ -177,11 +179,12 @@ async def test_second_sweep_does_not_re_clarify() -> None:
     # First sweep: no assessment
     svc, assessment_repo, session = make_assessment_svc(entry=entry, existing_assessment=None)
 
-    first_result = await svc.needs_clarify(entry.id)
+    first_result = await svc.needs_clarify(entry.id, 123)
     assert first_result is True
 
     # Record assessment
     await svc.record(
+        user_id=123,
         journal_entry_id=entry.id,
         leads_to_goals=True,
         set_via="clarify",
@@ -195,7 +198,7 @@ async def test_second_sweep_does_not_re_clarify() -> None:
     existing.set_via = "clarify"
 
     svc2, _, _ = make_assessment_svc(entry=entry, existing_assessment=existing)
-    second_result = await svc2.needs_clarify(entry.id)
+    second_result = await svc2.needs_clarify(entry.id, 123)
     assert second_result is False
 
 
@@ -215,6 +218,7 @@ async def test_duplicate_clarify_answer_raises_assessment_error() -> None:
 
     with pytest.raises(AssessmentError, match="already has"):
         await svc.record(
+            user_id=123,
             journal_entry_id=entry.id,
             leads_to_goals=False,
             set_via="clarify",

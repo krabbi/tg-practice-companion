@@ -23,13 +23,13 @@ class BlessingService:
     def __init__(self, blessing_repo: BlessingRepository) -> None:
         self._blessing_repo = blessing_repo
 
-    async def for_date(self, today: date) -> MorningBlessing | None:
-        """Return the blessing for *today*.
+    async def for_date(self, user_id: int, today: date) -> MorningBlessing | None:
+        """Return the blessing for *today* for user_id.
 
         Returns None when there are no active blessings.  Calling this method
         multiple times with the same date always returns the same blessing.
         """
-        blessings = await self._blessing_repo.get_active_ordered()
+        blessings = await self._blessing_repo.get_active_ordered(user_id)
         if not blessings:
             return None
         idx = today.toordinal() % len(blessings)

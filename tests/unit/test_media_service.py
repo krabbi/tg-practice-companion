@@ -184,10 +184,10 @@ async def test_list_assets_delegates_to_repo():
     service, _session, repo, _image_repo, _s3 = _make_service()
     repo.list_all.return_value = ["a", "b"]
 
-    result = await service.list_assets(kind="image")
+    result = await service.list_assets(_USER_ID, kind="image")
 
     assert result == ["a", "b"]
-    repo.list_all.assert_awaited_once_with("image")
+    repo.list_all.assert_awaited_once_with(_USER_ID, "image")
 
 
 async def test_get_asset_delegates_to_repo():
@@ -195,17 +195,17 @@ async def test_get_asset_delegates_to_repo():
     asset = MediaAsset(id=uuid.uuid4(), kind="image", storage_path="image/x.jpg")
     repo.get.return_value = asset
 
-    result = await service.get_asset(asset.id)
+    result = await service.get_asset(asset.id, _USER_ID)
 
     assert result is asset
-    repo.get.assert_awaited_once_with(asset.id)
+    repo.get.assert_awaited_once_with(asset.id, _USER_ID)
 
 
 async def test_delete_asset_missing_returns_false():
     service, session, repo, _image_repo, s3 = _make_service()
     repo.get.return_value = None
 
-    result = await service.delete_asset(uuid.uuid4())
+    result = await service.delete_asset(uuid.uuid4(), _USER_ID)
 
     assert result is False
     repo.delete.assert_not_awaited()
@@ -219,10 +219,10 @@ async def test_delete_asset_found_removes_row_and_calls_delete_object():
     asset = MediaAsset(id=uuid.uuid4(), kind="image", storage_path=asset_key)
     repo.get.return_value = asset
 
-    result = await service.delete_asset(asset.id)
+    result = await service.delete_asset(asset.id, _USER_ID)
 
     assert result is True
-    repo.delete.assert_awaited_once_with(asset.id)
+    repo.delete.assert_awaited_once_with(asset.id, _USER_ID)
     session.commit.assert_awaited_once()
     s3.delete_object.assert_awaited_once_with(asset_key)
 
@@ -234,7 +234,7 @@ async def test_delete_asset_s3_failure_is_swallowed():
     repo.get.return_value = asset
     s3.delete_object.side_effect = RuntimeError("S3 down")
 
-    result = await service.delete_asset(asset.id)
+    result = await service.delete_asset(asset.id, _USER_ID)
 
     assert result is True
     session.commit.assert_awaited_once()
@@ -245,7 +245,7 @@ async def test_delete_asset_skips_s3_when_storage_path_none():
     asset = MediaAsset(id=uuid.uuid4(), kind="image", storage_path=None)
     repo.get.return_value = asset
 
-    result = await service.delete_asset(asset.id)
+    result = await service.delete_asset(asset.id, _USER_ID)
 
     assert result is True
     s3.delete_object.assert_not_awaited()

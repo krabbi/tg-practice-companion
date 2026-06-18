@@ -45,19 +45,21 @@ class AssessmentService:
     async def record(
         self,
         *,
+        user_id: int,
         journal_entry_id: uuid.UUID,
         leads_to_goals: bool,
         set_via: str,
     ) -> AssessmentResult:
         """Persist a self-assessment for the given journal entry.
 
-        Raises AssessmentError if the entry does not exist or already has an assessment.
+        Raises AssessmentError if the entry does not exist, belongs to a different user,
+        or already has an assessment.
         """
-        entry = await self._journal_repo.get_by_id(journal_entry_id)
+        entry = await self._journal_repo.get_by_id(journal_entry_id, user_id)
         if entry is None:
             raise AssessmentError(f"JournalEntry {journal_entry_id} not found")
 
-        existing = await self._assessment_repo.get_by_entry_id(journal_entry_id)
+        existing = await self._assessment_repo.get_by_entry_id(journal_entry_id, user_id)
         if existing is not None:
             raise AssessmentError(f"JournalEntry {journal_entry_id} already has a self-assessment")
 
@@ -73,16 +75,16 @@ class AssessmentService:
             set_via=set_via,
         )
 
-    async def needs_clarify(self, journal_entry_id: uuid.UUID) -> bool:
+    async def needs_clarify(self, journal_entry_id: uuid.UUID, user_id: int) -> bool:
         """Return True if this thought entry has no assessment and no clarify sent yet.
 
         Called by the clarify sweep before sending a follow-up question.
         Checks the self_assessments table (no assessment) and the pending_prompt
         clarify_sent flag (not yet asked).
         """
-        entry = await self._journal_repo.get_by_id(journal_entry_id)
+        entry = await self._journal_repo.get_by_id(journal_entry_id, user_id)
         if entry is None:
             return False
 
-        assessment = await self._assessment_repo.get_by_entry_id(journal_entry_id)
+        assessment = await self._assessment_repo.get_by_entry_id(journal_entry_id, user_id)
         return assessment is None

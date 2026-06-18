@@ -221,7 +221,7 @@ async def tick(  # type: ignore[type-arg]
         ):
             blessing_repo = BlessingRepository(session)
             blessing_svc = BlessingService(blessing_repo)
-            blessing = await blessing_svc.for_date(local_now.date())
+            blessing = await blessing_svc.for_date(user.telegram_id, local_now.date())
             if blessing is not None:
                 # Claim before sending (same pattern as PracticeSend)
                 user.last_blessing_date = local_now.date()
@@ -240,7 +240,7 @@ async def tick(  # type: ignore[type-arg]
                         exc_info=True,
                     )
 
-        due_practices = await practice_service.due_now(local_now)
+        due_practices = await practice_service.due_now(user.telegram_id, local_now)
         if not due_practices:
             logger.debug("tick: no practices due at %s", local_now.strftime("%H:%M"))
             return
@@ -338,7 +338,7 @@ async def tick(  # type: ignore[type-arg]
                         exc_info=True,
                     )
             elif practice_content_type == "motivational_image":
-                image = await image_repo.random_active()
+                image = await image_repo.random_active(user.telegram_id)
                 if image is None:
                     logger.info(
                         "tick: no active motivational images for user %s, slot %s claimed silently",

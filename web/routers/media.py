@@ -103,10 +103,10 @@ async def upload_media(
 async def list_media(
     kind: Literal["audio", "image"] | None = None,
     service: MediaAdminService = Depends(_make_service),  # noqa: B008
-    _: dict = Depends(get_current_user),  # noqa: B008
+    current_user: dict = Depends(get_current_user),  # noqa: B008
 ) -> list:
     """List all media assets, optionally filtered by ?kind=audio|image."""
-    return await service.list_assets(kind)
+    return await service.list_assets(current_user["id"], kind)
 
 
 @media_router.get("/{asset_id}/url", response_model=PresignedUrlResponse)
@@ -114,10 +114,10 @@ async def get_media_url(
     asset_id: uuid.UUID,
     request: Request,
     service: MediaAdminService = Depends(_make_service),  # noqa: B008
-    _: dict = Depends(get_current_user),  # noqa: B008
+    current_user: dict = Depends(get_current_user),  # noqa: B008
 ) -> PresignedUrlResponse:
     """Return a short-lived presigned GET URL for the asset's S3 object."""
-    asset = await service.get_asset(asset_id)
+    asset = await service.get_asset(asset_id, current_user["id"])
     if asset is None or asset.storage_path is None:
         raise HTTPException(status_code=404, detail="Media asset not found")
     config = request.app.state.config
@@ -129,10 +129,10 @@ async def get_media_url(
 async def delete_media(
     asset_id: uuid.UUID,
     service: MediaAdminService = Depends(_make_service),  # noqa: B008
-    _: dict = Depends(get_current_user),  # noqa: B008
+    current_user: dict = Depends(get_current_user),  # noqa: B008
 ) -> None:
     """Delete a media asset row and its S3 object (best-effort)."""
-    found = await service.delete_asset(asset_id)
+    found = await service.delete_asset(asset_id, current_user["id"])
     if not found:
         raise HTTPException(status_code=404, detail="Media asset not found")
 

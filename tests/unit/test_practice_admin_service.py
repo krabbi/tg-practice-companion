@@ -71,10 +71,10 @@ async def test_list_all_delegates_to_repo():
     expected = [_make_practice(), _make_practice()]
     repo.list_all.return_value = expected
 
-    result = await service.list_all(active=True)
+    result = await service.list_all(_USER_ID, active=True)
 
     assert result == expected
-    repo.list_all.assert_awaited_once_with(True)
+    repo.list_all.assert_awaited_once_with(_USER_ID, True)
 
 
 async def test_get_delegates_to_repo():
@@ -82,10 +82,21 @@ async def test_get_delegates_to_repo():
     practice = _make_practice()
     repo.get_by_id.return_value = practice
 
-    result = await service.get(practice.id)
+    result = await service.get(practice.id, _USER_ID)
 
     assert result is practice
     repo.get_by_id.assert_awaited_once_with(practice.id)
+
+
+async def test_get_returns_none_for_wrong_user():
+    """get returns None when practice belongs to another user."""
+    service, _session, repo = _make_service()
+    practice = _make_practice(user_id=999)
+    repo.get_by_id.return_value = practice
+
+    result = await service.get(practice.id, _USER_ID)
+
+    assert result is None
 
 
 async def test_create_persists_and_commits():
@@ -158,7 +169,7 @@ async def test_update_applies_changes_and_commits():
     practice = _make_practice()
     repo.get_by_id.return_value = practice
 
-    result = await service.update(practice.id, {"content": "updated"})
+    result = await service.update(practice.id, _USER_ID, {"content": "updated"})
 
     assert result is practice
     assert practice.content == "updated"
@@ -170,7 +181,20 @@ async def test_update_missing_returns_none():
     service, session, repo = _make_service()
     repo.get_by_id.return_value = None
 
-    result = await service.update(uuid.uuid4(), {"content": "x"})
+    result = await service.update(uuid.uuid4(), _USER_ID, {"content": "x"})
+
+    assert result is None
+    repo.save.assert_not_awaited()
+    session.commit.assert_not_awaited()
+
+
+async def test_update_wrong_user_returns_none():
+    """update returns None when practice belongs to another user."""
+    service, session, repo = _make_service()
+    practice = _make_practice(user_id=999)
+    repo.get_by_id.return_value = practice
+
+    result = await service.update(practice.id, _USER_ID, {"content": "x"})
 
     assert result is None
     repo.save.assert_not_awaited()
@@ -183,14 +207,14 @@ async def test_update_revalidates_schedule():
     repo.get_by_id.return_value = practice
 
     with pytest.raises(PracticeValidationError, match="Invalid HH:MM"):
-        await service.update(practice.id, {"schedule_times": ["99:99"]})
+        await service.update(practice.id, _USER_ID, {"schedule_times": ["99:99"]})
 
 
 async def test_delete_found_commits_and_returns_true():
     service, session, repo = _make_service()
     repo.delete.return_value = True
 
-    result = await service.delete(uuid.uuid4())
+    result = await service.delete(uuid.uuid4(), _USER_ID)
 
     assert result is True
     session.commit.assert_awaited_once()
@@ -200,7 +224,7 @@ async def test_delete_missing_returns_false_without_commit():
     service, session, repo = _make_service()
     repo.delete.return_value = False
 
-    result = await service.delete(uuid.uuid4())
+    result = await service.delete(uuid.uuid4(), _USER_ID)
 
     assert result is False
     session.commit.assert_not_awaited()

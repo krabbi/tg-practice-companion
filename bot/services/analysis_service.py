@@ -139,6 +139,7 @@ class AnalysisService:
                     kind=UsageKind.analysis,
                     model=self._llm_client.model,
                     usage=usage,
+                    user_id=user_id,
                 )
             except Exception:
                 logger.error(

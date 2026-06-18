@@ -49,6 +49,9 @@ def make_practice(
     return p
 
 
+_USER_ID = 123456789
+
+
 def make_service(practices: list[Practice]) -> PracticeService:
     repo = MagicMock(spec=PracticeRepository)
     repo.get_active_practices = AsyncMock(return_value=[p for p in practices if p.active])
@@ -69,7 +72,7 @@ def dt(hour: int, minute: int = 0, day: int = 10) -> datetime:
 async def test_fixed_times_match() -> None:
     p = make_practice(periodicity_type="fixed_times", schedule_times=["08:00"])
     svc = make_service([p])
-    due = await svc.due_now(dt(8, 0))
+    due = await svc.due_now(_USER_ID, dt(8, 0))
     assert p in due
 
 
@@ -77,7 +80,7 @@ async def test_fixed_times_match() -> None:
 async def test_fixed_times_no_match_wrong_hour() -> None:
     p = make_practice(periodicity_type="fixed_times", schedule_times=["08:00"])
     svc = make_service([p])
-    due = await svc.due_now(dt(9, 0))
+    due = await svc.due_now(_USER_ID, dt(9, 0))
     assert p not in due
 
 
@@ -85,7 +88,7 @@ async def test_fixed_times_no_match_wrong_hour() -> None:
 async def test_fixed_times_no_match_wrong_minute() -> None:
     p = make_practice(periodicity_type="fixed_times", schedule_times=["08:00"])
     svc = make_service([p])
-    due = await svc.due_now(dt(8, 1))
+    due = await svc.due_now(_USER_ID, dt(8, 1))
     assert p not in due
 
 
@@ -93,16 +96,16 @@ async def test_fixed_times_no_match_wrong_minute() -> None:
 async def test_fixed_times_multiple_slots_match() -> None:
     p = make_practice(periodicity_type="fixed_times", schedule_times=["08:00", "20:00"])
     svc = make_service([p])
-    assert p in await svc.due_now(dt(8, 0))
-    assert p in await svc.due_now(dt(20, 0))
-    assert p not in await svc.due_now(dt(12, 0))
+    assert p in await svc.due_now(_USER_ID, dt(8, 0))
+    assert p in await svc.due_now(_USER_ID, dt(20, 0))
+    assert p not in await svc.due_now(_USER_ID, dt(12, 0))
 
 
 @pytest.mark.asyncio
 async def test_fixed_times_empty_schedule() -> None:
     p = make_practice(periodicity_type="fixed_times", schedule_times=[])
     svc = make_service([p])
-    due = await svc.due_now(dt(8, 0))
+    due = await svc.due_now(_USER_ID, dt(8, 0))
     assert p not in due
 
 
@@ -119,7 +122,7 @@ async def test_hourly_anchor_hour_0_fires_every_hour() -> None:
     )
     svc = make_service([p])
     for hour in range(0, 24):
-        result = await svc.due_now(dt(hour, 0))
+        result = await svc.due_now(_USER_ID, dt(hour, 0))
         assert p in result, f"Expected due at {hour:02d}:00"
 
 
@@ -129,7 +132,7 @@ async def test_hourly_anchor_hour_0_not_due_at_nonzero_minute() -> None:
         periodicity_type="every_n_hours", interval_hours=1, anchor_hour=0, anchor_minute=0
     )
     svc = make_service([p])
-    assert p not in await svc.due_now(dt(8, 30))
+    assert p not in await svc.due_now(_USER_ID, dt(8, 30))
 
 
 @pytest.mark.asyncio
@@ -143,9 +146,11 @@ async def test_every_4h_anchor_hour_6_fires_at_correct_hours() -> None:
     due_hours = {2, 6, 10, 14, 18, 22}
     not_due_hours = set(range(24)) - due_hours
     for hour in due_hours:
-        assert p in await svc.due_now(dt(hour, 0)), f"Expected due at {hour:02d}:00"
+        assert p in await svc.due_now(_USER_ID, dt(hour, 0)), f"Expected due at {hour:02d}:00"
     for hour in not_due_hours:
-        assert p not in await svc.due_now(dt(hour, 0)), f"Expected NOT due at {hour:02d}:00"
+        assert p not in await svc.due_now(_USER_ID, dt(hour, 0)), (
+            f"Expected NOT due at {hour:02d}:00"
+        )
 
 
 @pytest.mark.asyncio
@@ -155,9 +160,9 @@ async def test_every_4h_anchor_minute_gating() -> None:
         periodicity_type="every_n_hours", interval_hours=4, anchor_hour=6, anchor_minute=30
     )
     svc = make_service([p])
-    assert p not in await svc.due_now(dt(6, 0))
-    assert p in await svc.due_now(dt(6, 30))
-    assert p not in await svc.due_now(dt(6, 15))
+    assert p not in await svc.due_now(_USER_ID, dt(6, 0))
+    assert p in await svc.due_now(_USER_ID, dt(6, 30))
+    assert p not in await svc.due_now(_USER_ID, dt(6, 15))
 
 
 @pytest.mark.asyncio
@@ -165,7 +170,7 @@ async def test_every_n_hours_zero_interval_not_due() -> None:
     """interval_hours=0 must never fire (guard against division by zero)."""
     p = make_practice(periodicity_type="every_n_hours", interval_hours=0, anchor_hour=0)
     svc = make_service([p])
-    assert p not in await svc.due_now(dt(8, 0))
+    assert p not in await svc.due_now(_USER_ID, dt(8, 0))
 
 
 # ---------------------------------------------------------------------------
@@ -183,7 +188,7 @@ async def test_start_date_gating_before_start() -> None:
     )
     svc = make_service([p])
     # 2026-06-10 is before start_date 2026-06-15
-    assert p not in await svc.due_now(dt(8, 0, day=10))
+    assert p not in await svc.due_now(_USER_ID, dt(8, 0, day=10))
 
 
 @pytest.mark.asyncio
@@ -194,7 +199,7 @@ async def test_start_date_gating_on_start_date() -> None:
         start_date=datetime(2026, 6, 10, 0, 0),
     )
     svc = make_service([p])
-    assert p in await svc.due_now(dt(8, 0, day=10))
+    assert p in await svc.due_now(_USER_ID, dt(8, 0, day=10))
 
 
 @pytest.mark.asyncio
@@ -206,7 +211,7 @@ async def test_end_date_gating_after_end() -> None:
         end_date=datetime(2026, 6, 9, 0, 0),
     )
     svc = make_service([p])
-    assert p not in await svc.due_now(dt(8, 0, day=10))
+    assert p not in await svc.due_now(_USER_ID, dt(8, 0, day=10))
 
 
 @pytest.mark.asyncio
@@ -217,7 +222,7 @@ async def test_end_date_gating_on_end_date() -> None:
         end_date=datetime(2026, 6, 10, 0, 0),
     )
     svc = make_service([p])
-    assert p in await svc.due_now(dt(8, 0, day=10))
+    assert p in await svc.due_now(_USER_ID, dt(8, 0, day=10))
 
 
 # ---------------------------------------------------------------------------
@@ -231,6 +236,6 @@ async def test_inactive_practice_not_returned() -> None:
     active = make_practice(periodicity_type="fixed_times", schedule_times=["08:00"], active=True)
     inactive = make_practice(periodicity_type="fixed_times", schedule_times=["08:00"], active=False)
     svc = make_service([active, inactive])
-    due = await svc.due_now(dt(8, 0))
+    due = await svc.due_now(_USER_ID, dt(8, 0))
     assert active in due
     assert inactive not in due

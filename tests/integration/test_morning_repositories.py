@@ -140,7 +140,7 @@ async def test_blessing_get_active_ordered(db_session: AsyncSession) -> None:
         db_session.add(b)
     await db_session.flush()
 
-    result = await repo.get_active_ordered()
+    result = await repo.get_active_ordered(TEST_USER_ID)
 
     assert len(result) == 2
     assert result[0].text == "first"
@@ -151,7 +151,7 @@ async def test_blessing_get_active_ordered(db_session: AsyncSession) -> None:
 async def test_blessing_get_active_ordered_empty(db_session: AsyncSession) -> None:
     """get_active_ordered returns empty list when no active blessings exist."""
     repo = BlessingRepository(db_session)
-    result = await repo.get_active_ordered()
+    result = await repo.get_active_ordered(TEST_USER_ID)
     assert result == []
 
 
@@ -212,7 +212,7 @@ async def test_image_get_active_excludes_inactive(db_session: AsyncSession) -> N
     db_session.add(inactive_img)
     await db_session.flush()
 
-    result = await repo.get_active()
+    result = await repo.get_active(TEST_USER_ID)
 
     assert len(result) == 1
     assert result[0].id == active_img.id
@@ -222,7 +222,7 @@ async def test_image_get_active_excludes_inactive(db_session: AsyncSession) -> N
 async def test_image_get_active_empty(db_session: AsyncSession) -> None:
     """get_active returns empty list when no active images exist."""
     repo = ImageRepository(db_session)
-    result = await repo.get_active()
+    result = await repo.get_active(TEST_USER_ID)
     assert result == []
 
 

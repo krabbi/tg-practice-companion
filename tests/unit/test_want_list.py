@@ -70,7 +70,7 @@ async def test_service_add_creates_item(db_session: AsyncSession) -> None:
     assert item.text == "Learn piano"
     assert item.done is False
 
-    fetched = await repo.get_by_id(item.id)
+    fetched = await repo.get_by_id(item.id, 1)
     assert fetched is not None
     assert fetched.text == "Learn piano"
 
@@ -83,7 +83,7 @@ async def test_service_list_active_excludes_done(db_session: AsyncSession) -> No
 
     item1 = await svc.add(user_id=2, text="Active item")
     done_item = await svc.add(user_id=2, text="Done item")
-    await repo.mark_done(done_item.id)
+    await repo.mark_done(done_item.id, 2)
     await db_session.commit()
 
     active = await svc.list_active(user_id=2)
@@ -119,7 +119,7 @@ async def test_service_random_active_never_returns_done(db_session: AsyncSession
     svc = WantListService(db_session, repo)
 
     done = await svc.add(user_id=4, text="Done wish")
-    await repo.mark_done(done.id)
+    await repo.mark_done(done.id, 4)
     await db_session.commit()
     active = await svc.add(user_id=4, text="Active wish")
 
