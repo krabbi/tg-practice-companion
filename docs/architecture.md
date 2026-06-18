@@ -414,6 +414,13 @@ All fields are loaded from environment variables (or `.env` file) via `pydantic-
 | `jwt_secret` | `JWT_SECRET` | `str` | `""` | Stage-2 stub; unused in Stage 1 |
 | `cors_origins` | `CORS_ORIGINS` | `list[str]` | `[]` | Stage-2 stub; unused in Stage 1 |
 | `media_storage_dir` | `MEDIA_STORAGE_DIR` | `str` | `"/data/media"` | Filesystem path for uploaded audio/image files (B4); mount as a volume in production |
+| `s3_endpoint_url` | `S3_ENDPOINT_URL` | `str` | `""` | S3-compatible service endpoint (e.g. `https://s3.us-west-004.backblazeb2.com`); empty disables S3 |
+| `s3_region` | `S3_REGION` | `str` | `""` | S3 region name (e.g. `us-west-004`) |
+| `s3_bucket` | `S3_BUCKET` | `str` | `""` | S3 bucket name |
+| `s3_access_key_id` | `S3_ACCESS_KEY_ID` | `str` | `""` | S3 access key ID |
+| `s3_secret_access_key` | `S3_SECRET_ACCESS_KEY` | `str` | `""` | S3 secret access key |
+| `s3_presign_expiry_seconds` | `S3_PRESIGN_EXPIRY_SECONDS` | `int` | `900` | Default presigned URL TTL in seconds |
+| `media_max_upload_bytes` | `MEDIA_MAX_UPLOAD_BYTES` | `int` | `10485760` | Maximum allowed upload size (10 MB) |
 | `web_app_url` | `WEB_APP_URL` | `str` | `""` | HTTPS URL of the deployed web admin SPA (AC-19); empty string disables the `/admin` command |
 
 ## Frontend config (SPA build-time)

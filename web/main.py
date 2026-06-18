@@ -8,6 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from bot.config import Config
 from bot.db import build_session_factory
+from bot.services.storage_service import S3StorageService
 from web.routers.auth import router as auth_router
 from web.routers.blessings import router as blessings_router
 from web.routers.journal import router as journal_router
@@ -31,11 +32,17 @@ def create_app(config: Config | None = None) -> FastAPI:
 
     session_factory = build_session_factory(config.database_url)
 
+    # Build S3 storage service only when all required vars are present; absent in Stage 1.
+    storage_service: S3StorageService | None = None
+    if config.s3_bucket and config.s3_access_key_id and config.s3_secret_access_key:
+        storage_service = S3StorageService.from_config(config)
+
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         from aiogram import Bot
 
         app.state.session_factory = session_factory
+        app.state.storage_service = storage_service
         # Create a Bot for Telegram file uploads unless one was injected externally (e.g. tests).
         own_bot = not getattr(app.state, "bot", None)
         if own_bot:
