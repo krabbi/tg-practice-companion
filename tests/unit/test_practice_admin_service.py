@@ -23,9 +23,13 @@ def _make_service() -> tuple[PracticeAdminService, AsyncMock, AsyncMock]:
     return service, session, repo
 
 
+_USER_ID = 123456789
+
+
 def _make_practice(**overrides) -> Practice:
     p = Practice()
     p.id = uuid.uuid4()
+    p.user_id = _USER_ID
     p.name = "existing"
     p.content_type = "text"
     p.content = "hello"
@@ -45,6 +49,7 @@ def _make_practice(**overrides) -> Practice:
 
 
 _CREATE_KW = dict(
+    user_id=_USER_ID,
     name="daily text",
     content_type="text",
     content="hi",

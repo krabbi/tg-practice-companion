@@ -156,11 +156,11 @@ async def get_practice(
 async def create_practice(
     body: PracticeCreate,
     service: PracticeAdminService = Depends(_make_service),  # noqa: B008
-    _: dict = Depends(get_current_user),  # noqa: B008
+    current_user: dict = Depends(get_current_user),  # noqa: B008
 ) -> object:
     """Create a new practice."""
     try:
-        return await service.create(**body.model_dump())
+        return await service.create(user_id=current_user["id"], **body.model_dump())
     except PracticeValidationError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 

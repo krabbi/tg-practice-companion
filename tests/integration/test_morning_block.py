@@ -80,6 +80,7 @@ async def morning_factory(session_factory) -> async_sessionmaker:
             b.text = f"Blessing {i}"
             b.rotation_order = i
             b.active = True
+            b.user_id = 123456789
             session.add(b)
 
         # Morning practice at 06:00 — delivered first after blessing (sort_order=30)
@@ -97,6 +98,7 @@ async def morning_factory(session_factory) -> async_sessionmaker:
         mp.anchor_minute = 0
         mp.sort_order = 30
         mp.media_asset_id = None
+        mp.user_id = 123456789
         session.add(mp)
 
         # Hourly thought question — also fires at 06:00, delivered last (sort_order=100)
@@ -116,6 +118,7 @@ async def morning_factory(session_factory) -> async_sessionmaker:
         hq.end_date = None
         hq.sort_order = 100
         hq.media_asset_id = None
+        hq.user_id = 123456789
         session.add(hq)
 
         await session.commit()
@@ -286,6 +289,7 @@ async def test_no_blessing_when_no_blessings_seeded(session_factory, morning_con
         mp.anchor_minute = 0
         mp.sort_order = 30
         mp.media_asset_id = None
+        mp.user_id = 123456789
         s.add(mp)
         await s.commit()
 

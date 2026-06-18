@@ -23,6 +23,9 @@ from bot.repositories.practice_repository import PracticeRepository
 # ---------------------------------------------------------------------------
 
 
+TEST_USER_ID = 123456789
+
+
 def make_practice(
     name: str = "test practice",
     active: bool = True,
@@ -43,6 +46,7 @@ def make_practice(
     p.anchor_minute = 0
     p.sort_order = sort_order
     p.media_asset_id = media_asset_id
+    p.user_id = TEST_USER_ID
     return p
 
 
@@ -53,6 +57,7 @@ def make_media_asset(kind: str = "audio") -> MediaAsset:
     a.telegram_file_id = "BQACAgI_file123"
     a.storage_path = None
     a.mime = "audio/mpeg"
+    a.user_id = TEST_USER_ID
     return a
 
 

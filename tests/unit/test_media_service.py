@@ -19,6 +19,8 @@ from bot.services.media_service import (
 )
 from bot.services.storage_service import S3StorageService
 
+_USER_ID = 123456789
+
 
 def _make_storage() -> S3StorageService:
     storage = MagicMock(spec=S3StorageService)
@@ -69,7 +71,9 @@ async def test_upload_invalid_kind_rejected():
     service, _session, repo, _image_repo, s3 = _make_service()
 
     with pytest.raises(MediaAssetError, match="Invalid kind"):
-        await service.upload(b"data", "x.bin", "video", "application/octet-stream")
+        await service.upload(
+            b"data", "x.bin", "video", "application/octet-stream", user_id=_USER_ID
+        )
 
     repo.create.assert_not_awaited()
     s3.put_object.assert_not_awaited()
@@ -78,7 +82,7 @@ async def test_upload_invalid_kind_rejected():
 async def test_upload_without_bot_calls_put_object_and_commits():
     service, session, repo, _image_repo, s3 = _make_service(bot=None, chat_id=None)
 
-    asset = await service.upload(b"bytes", "pic.png", "image", "image/png")
+    asset = await service.upload(b"bytes", "pic.png", "image", "image/png", user_id=_USER_ID)
 
     s3.put_object.assert_awaited_once()
     call_key, call_data = s3.put_object.call_args[0][:2]
@@ -87,6 +91,7 @@ async def test_upload_without_bot_calls_put_object_and_commits():
     assert call_data == b"bytes"
     assert asset.telegram_file_id is None
     assert asset.storage_path == call_key
+    assert asset.user_id == _USER_ID
     repo.create.assert_awaited_once()
     session.commit.assert_awaited_once()
 
@@ -97,7 +102,7 @@ async def test_upload_no_filesystem_writes():
 
     with patch("bot.services.media_service.Path") as mock_path_cls:
         mock_path_cls.return_value = MagicMock(suffix=".jpg")
-        await service.upload(b"x", "pic.jpg", "image", "image/jpeg")
+        await service.upload(b"x", "pic.jpg", "image", "image/jpeg", user_id=_USER_ID)
 
     # write_bytes should never have been called
     for call in mock_path_cls.return_value.mock_calls:
@@ -108,7 +113,7 @@ async def test_upload_no_filesystem_writes():
 async def test_upload_key_format():
     service, _session, _repo, _image_repo, s3 = _make_service()
 
-    asset = await service.upload(b"x", "track.mp3", "audio", "audio/mpeg")
+    asset = await service.upload(b"x", "track.mp3", "audio", "audio/mpeg", user_id=_USER_ID)
 
     assert asset.storage_path.startswith("audio/")
     assert asset.storage_path.endswith(".mp3")
@@ -117,7 +122,7 @@ async def test_upload_key_format():
 async def test_upload_uses_default_suffix_when_filename_has_none():
     service, _session, _repo, _image_repo, s3 = _make_service()
 
-    asset = await service.upload(b"x", "noextension", "image", "image/jpeg")
+    asset = await service.upload(b"x", "noextension", "image", "image/jpeg", user_id=_USER_ID)
 
     assert asset.storage_path.endswith(".jpg")
 
@@ -126,7 +131,7 @@ async def test_upload_with_bot_captures_image_file_id():
     bot = _make_mock_bot("PHOTO_ID")
     service, _session, _repo, _image_repo, s3 = _make_service(bot=bot, chat_id=42)
 
-    asset = await service.upload(b"img", "p.jpg", "image", "image/jpeg")
+    asset = await service.upload(b"img", "p.jpg", "image", "image/jpeg", user_id=_USER_ID)
 
     assert asset.telegram_file_id == "PHOTO_ID"
     bot.send_photo.assert_awaited_once()
@@ -136,7 +141,7 @@ async def test_upload_with_bot_captures_image_file_id():
 async def test_upload_put_object_receives_correct_mime():
     service, _session, _repo, _image_repo, s3 = _make_service()
 
-    await service.upload(b"data", "audio.mp3", "audio", "audio/mpeg")
+    await service.upload(b"data", "audio.mp3", "audio", "audio/mpeg", user_id=_USER_ID)
 
     _, kwargs = s3.put_object.call_args
     # content_type is passed as keyword arg
@@ -150,7 +155,7 @@ async def test_upload_orphan_cleanup_on_telegram_failure():
     service, _session, repo, _image_repo, s3 = _make_service(bot=bot, chat_id=1)
 
     with pytest.raises(RuntimeError, match="telegram down"):
-        await service.upload(b"img", "p.jpg", "image", "image/jpeg")
+        await service.upload(b"img", "p.jpg", "image", "image/jpeg", user_id=_USER_ID)
 
     s3.put_object.assert_awaited_once()
     s3.delete_object.assert_awaited_once()
@@ -169,7 +174,7 @@ async def test_upload_s3_failure_does_not_call_telegram():
     s3.put_object.side_effect = RuntimeError("S3 down")
 
     with pytest.raises(RuntimeError, match="S3 down"):
-        await service.upload(b"img", "p.jpg", "image", "image/jpeg")
+        await service.upload(b"img", "p.jpg", "image", "image/jpeg", user_id=_USER_ID)
 
     bot.send_photo.assert_not_awaited()
     repo.create.assert_not_awaited()
@@ -251,7 +256,7 @@ async def test_create_motivational_image_missing_asset_raises():
     repo.get.return_value = None
 
     with pytest.raises(MediaAssetError, match="not found"):
-        await service.create_motivational_image(uuid.uuid4())
+        await service.create_motivational_image(uuid.uuid4(), _USER_ID)
 
 
 async def test_create_motivational_image_wrong_kind_raises():
@@ -259,7 +264,7 @@ async def test_create_motivational_image_wrong_kind_raises():
     repo.get.return_value = MediaAsset(id=uuid.uuid4(), kind="audio", storage_path="audio/a.mp3")
 
     with pytest.raises(MediaAssetError, match="must be 'image'"):
-        await service.create_motivational_image(uuid.uuid4())
+        await service.create_motivational_image(uuid.uuid4(), _USER_ID)
 
 
 async def test_create_motivational_image_success():
@@ -267,9 +272,10 @@ async def test_create_motivational_image_success():
     asset_id = uuid.uuid4()
     repo.get.return_value = MediaAsset(id=asset_id, kind="image", storage_path="image/i.jpg")
 
-    image = await service.create_motivational_image(asset_id, active=False)
+    image = await service.create_motivational_image(asset_id, _USER_ID, active=False)
 
     assert image.media_asset_id == asset_id
+    assert image.user_id == _USER_ID
     assert image.active is False
     image_repo.save.assert_awaited_once()
     session.commit.assert_awaited_once()

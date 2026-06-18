@@ -356,6 +356,7 @@ async def test_tick_sends_want_pick_when_practice_due() -> None:
 
         practice = Practice()
         practice.id = uuid.uuid4()
+        practice.user_id = 123456789
         practice.name = "Daily want pick"
         practice.content_type = "want"
         practice.content = None

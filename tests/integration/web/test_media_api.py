@@ -393,6 +393,7 @@ async def test_get_url_asset_without_storage_path_returns_404(
             storage_path=None,
             telegram_file_id=None,
             mime="image/jpeg",
+            user_id=ALLOWED_USER_ID,
         )
         repo = MediaAssetRepository(session)
         await repo.create(asset)

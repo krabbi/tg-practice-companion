@@ -52,10 +52,12 @@ class BlessingRepository:
         return list(result.scalars().all())
 
     async def create(
-        self, *, text: str, rotation_order: int, active: bool = True
+        self, *, user_id: int, text: str, rotation_order: int, active: bool = True
     ) -> MorningBlessing:
         """Create and flush a new blessing; caller commits."""
-        blessing = MorningBlessing(text=text, rotation_order=rotation_order, active=active)
+        blessing = MorningBlessing(
+            user_id=user_id, text=text, rotation_order=rotation_order, active=active
+        )
         self._session.add(blessing)
         await self._session.flush()
         await self._session.refresh(blessing)

@@ -44,6 +44,7 @@ class MediaAdminService:
         filename: str,
         kind: str,
         mime: str,
+        user_id: int,
     ) -> MediaAsset:
         """Upload bytes to S3, capture Telegram file_id, and commit a MediaAsset row.
 
@@ -80,6 +81,7 @@ class MediaAdminService:
 
         asset = MediaAsset(
             id=asset_id,
+            user_id=user_id,
             kind=kind,
             storage_path=key,
             telegram_file_id=telegram_file_id,
@@ -119,6 +121,7 @@ class MediaAdminService:
     async def create_motivational_image(
         self,
         media_asset_id: uuid.UUID,
+        user_id: int,
         active: bool = True,
     ) -> MotivationalImage:
         """Add a MediaAsset to the motivational-image pool and commit."""
@@ -129,7 +132,9 @@ class MediaAdminService:
             raise MediaAssetError(
                 f"MediaAsset {media_asset_id} has kind={asset.kind!r}; must be 'image'"
             )
-        image = MotivationalImage(id=uuid.uuid4(), media_asset_id=media_asset_id, active=active)
+        image = MotivationalImage(
+            id=uuid.uuid4(), user_id=user_id, media_asset_id=media_asset_id, active=active
+        )
         await self._image_repo.save(image)
         await self._session.commit()
         return image

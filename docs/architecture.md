@@ -26,6 +26,7 @@ Owned media entity for audio/image practices. Stage 1 populates `telegram_file_i
 | Column | Type | Nullable | Default | Notes |
 |---|---|---|---|---|
 | `id` | `UUID` | NO | `uuid4()` | Primary key |
+| `user_id` | `BigInteger FK→users.telegram_id` | NO | — | Owning user |
 | `kind` | `Enum(audio, image)` | NO | — | Media type |
 | `storage_path` | `String(512)` | YES | — | S3 object key (`kind/<uuid><ext>`); null in Stage 1 |
 | `telegram_file_id` | `String(256)` | YES | — | Stored Telegram file ID for re-sending (AC-2) |
@@ -35,7 +36,9 @@ Owned media entity for audio/image practices. Stage 1 populates `telegram_file_i
 
 Invariant: at least one of `storage_path` / `telegram_file_id` must be non-null (enforced at the service layer).
 
-Migration: `alembic/versions/0002_practice_engine.py`
+Index: `ix_media_assets_user_id(user_id)`
+
+Migrations: `alembic/versions/0002_practice_engine.py` (initial schema); `alembic/versions/0010_per_user_content.py` (added `user_id`).
 
 ---
 
@@ -46,6 +49,7 @@ One row per schedulable practice. Cadence and content are data; code is the engi
 | Column | Type | Nullable | Default | Notes |
 |---|---|---|---|---|
 | `id` | `UUID` | NO | `uuid4()` | Primary key |
+| `user_id` | `BigInteger FK→users.telegram_id` | NO | — | Owning user |
 | `name` | `String(120)` | NO | — | Human-readable identifier; used for idempotent seed upsert |
 | `content_type` | `Enum(question, text, audio, image, want, good_deeds, motivational_image)` | NO | — | Determines delivery method |
 | `content` | `Text` | YES | — | Body for `question`/`text` practices |
@@ -62,9 +66,9 @@ One row per schedulable practice. Cadence and content are data; code is the engi
 | `created_at` | `DateTime(tz=True)` | NO | `now()` | Row creation timestamp |
 | `updated_at` | `DateTime(tz=True)` | NO | `now()` | Last update timestamp |
 
-Index: `ix_practices_active(active)`
+Index: `ix_practices_user_active(user_id, active)` (replaces the former `ix_practices_active(active)` added by 0002)
 
-Migrations: `alembic/versions/0002_practice_engine.py` (initial schema); `alembic/versions/0007_want_practice_type.py` (added `want` to the `content_type` enum); `alembic/versions/0008_good_deeds_practice_type.py` (added `good_deeds`); `alembic/versions/0009_motivational_image_practice_type.py` (added `motivational_image`).
+Migrations: `alembic/versions/0002_practice_engine.py` (initial schema); `alembic/versions/0007_want_practice_type.py` (added `want` to the `content_type` enum); `alembic/versions/0008_good_deeds_practice_type.py` (added `good_deeds`); `alembic/versions/0009_motivational_image_practice_type.py` (added `motivational_image`); `alembic/versions/0010_per_user_content.py` (added `user_id`).
 
 ---
 
@@ -166,13 +170,16 @@ A pool of short blessing texts cycled each morning in `rotation_order` sequence.
 | Column | Type | Nullable | Default | Notes |
 |---|---|---|---|---|
 | `id` | `UUID` | NO | `uuid4()` | Primary key |
+| `user_id` | `BigInteger FK→users.telegram_id` | NO | — | Owning user |
 | `text` | `Text` | NO | — | Blessing body |
-| `rotation_order` | `Integer` | NO | — | Ascending delivery order |
+| `rotation_order` | `Integer` | NO | — | Ascending delivery order per user |
 | `active` | `Boolean` | NO | `true` | Inactive rows are skipped |
 
-Unique constraint: `uq_morning_blessings_rotation_order(rotation_order)`
+Unique constraint: `uq_morning_blessings_user_rotation(user_id, rotation_order)` (was global `uq_morning_blessings_rotation_order(rotation_order)` before 0010)
 
-Migration: `alembic/versions/0004_morning_and_usage.py`
+Index: `ix_morning_blessings_user_id(user_id)`
+
+Migrations: `alembic/versions/0004_morning_and_usage.py` (initial schema); `alembic/versions/0010_per_user_content.py` (added `user_id`, changed unique constraint).
 
 ---
 
@@ -183,10 +190,13 @@ A pool of motivational images, each backed by a `MediaAsset`.
 | Column | Type | Nullable | Default | Notes |
 |---|---|---|---|---|
 | `id` | `UUID` | NO | `uuid4()` | Primary key |
+| `user_id` | `BigInteger FK→users.telegram_id` | NO | — | Owning user |
 | `media_asset_id` | `UUID FK→media_assets` | NO | — | The underlying media asset |
 | `active` | `Boolean` | NO | `true` | Inactive rows are skipped |
 
-Migration: `alembic/versions/0004_morning_and_usage.py`
+Index: `ix_motivational_images_user_id(user_id)`
+
+Migrations: `alembic/versions/0004_morning_and_usage.py` (initial schema); `alembic/versions/0010_per_user_content.py` (added `user_id`).
 
 ---
 
@@ -217,6 +227,7 @@ One row per product LLM/API call for cost tracking (AC-16).
 | Column | Type | Nullable | Default | Notes |
 |---|---|---|---|---|
 | `id` | `UUID` | NO | `uuid4()` | Primary key |
+| `user_id` | `BigInteger` | YES | — | Attributing user; nullable (attribution only) |
 | `kind` | `Enum(analysis, report, transcription)` | NO | — | Type of API call |
 | `model` | `String(64)` | NO | — | Model identifier, e.g. `claude-haiku-4-5-20251001` |
 | `input_tokens` | `Integer` | NO | — | Prompt tokens consumed |
@@ -225,9 +236,9 @@ One row per product LLM/API call for cost tracking (AC-16).
 | `cost_usd` | `Numeric(10,6)` | NO | — | Computed cost in USD |
 | `created_at` | `DateTime(tz=True)` | NO | `now()` | Row creation timestamp |
 
-Index: `ix_api_usage_logs_created_at(created_at)` — supports period-sum queries (AC-16 monthly cap).
+Indexes: `ix_api_usage_logs_created_at(created_at)` — supports period-sum queries (AC-16 monthly cap); `ix_api_usage_logs_user_id(user_id)` — supports per-user cost queries.
 
-Migration: `alembic/versions/0004_morning_and_usage.py`
+Migrations: `alembic/versions/0004_morning_and_usage.py` (initial schema); `alembic/versions/0010_per_user_content.py` (added nullable `user_id`).
 
 ---
 

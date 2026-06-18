@@ -356,6 +356,7 @@ async def test_seed_audio_creates_media_asset_on_practice(
     practice_repo = PracticeRepository(db_session)
     practice = Practice(
         id=uuid.uuid4(),
+        user_id=123456789,
         name="Night hypnosis",
         content_type="audio",
         periodicity_type="fixed_times",
@@ -406,6 +407,7 @@ async def test_seed_audio_idempotent(
     practice_repo = PracticeRepository(db_session)
     practice = Practice(
         id=uuid.uuid4(),
+        user_id=123456789,
         name="Night hypnosis",
         content_type="audio",
         periodicity_type="fixed_times",

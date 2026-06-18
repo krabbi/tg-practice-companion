@@ -90,6 +90,7 @@ async def _seed_practice(factory: async_sessionmaker, schedule_time: str = "10:0
         p.anchor_minute = 0
         p.sort_order = 0
         p.media_asset_id = None
+        p.user_id = 123456789
         session.add(p)
         await session.commit()
         await session.refresh(p)
