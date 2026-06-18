@@ -103,7 +103,7 @@ async def seed_practices(yaml_path: Path) -> None:
     config = get_config()
     session_factory = build_session_factory(config.database_url)
 
-    with yaml_path.open() as f:
+    with yaml_path.open(encoding="utf-8") as f:
         rows: list[dict] = yaml.safe_load(f)
 
     if not rows:
@@ -187,7 +187,7 @@ async def seed_blessings(yaml_path: Path) -> None:
     config = get_config()
     session_factory = build_session_factory(config.database_url)
 
-    with yaml_path.open() as f:
+    with yaml_path.open(encoding="utf-8") as f:
         rows: list[dict] = yaml.safe_load(f)
 
     if not rows:
@@ -244,7 +244,7 @@ async def seed_images(yaml_path: Path, *, bot: object | None = None) -> None:
     config = get_config()
     session_factory = build_session_factory(config.database_url)
 
-    with yaml_path.open() as f:
+    with yaml_path.open(encoding="utf-8") as f:
         rows: list[dict] = yaml.safe_load(f)
 
     if not rows:
@@ -347,7 +347,7 @@ async def seed_audio(yaml_path: Path, *, bot: object | None = None) -> None:
     config = get_config()
     session_factory = build_session_factory(config.database_url)
 
-    with yaml_path.open() as f:
+    with yaml_path.open(encoding="utf-8") as f:
         rows: list[dict] = yaml.safe_load(f)
 
     if not rows:

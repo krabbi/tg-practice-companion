@@ -721,9 +721,11 @@ Edit the YAML files in `content/`, then run:
 python -m cli.seed practices content/practices.yaml
 python -m cli.seed blessings content/blessings.yaml
 
-# Via Docker Compose (no local Python setup needed):
-docker compose run --rm bot python -m cli.seed practices content/practices.yaml
-docker compose run --rm bot python -m cli.seed blessings content/blessings.yaml
+# Via Docker Compose (no local Python setup needed).
+# The `-v` mount is required: the image bakes only the example YAML, so the host
+# content/ directory (your edited files) must be mounted over /app/content.
+docker compose run --rm -v "$PWD/content:/app/content" bot python -m cli.seed practices content/practices.yaml
+docker compose run --rm -v "$PWD/content:/app/content" bot python -m cli.seed blessings content/blessings.yaml
 ```
 
 All seed commands are **idempotent** — safe to re-run after any edit.
@@ -767,8 +769,8 @@ Changes take effect on the next scheduler tick (within 1 minute) — no restart 
 
 ```bash
 python -m cli.seed audio content/audio.yaml
-# Or via Docker:
-docker compose run --rm bot python -m cli.seed audio content/audio.yaml
+# Or via Docker (mount host content/ so media files and YAML are visible):
+docker compose run --rm -v "$PWD/content:/app/content" bot python -m cli.seed audio content/audio.yaml
 ```
 
 The seeder uploads the file to Telegram, captures the `file_id`, and stores it in
@@ -789,8 +791,8 @@ The seeder uploads the file to Telegram, captures the `file_id`, and stores it i
 
 ```bash
 python -m cli.seed images content/images.yaml
-# Or via Docker:
-docker compose run --rm bot python -m cli.seed images content/images.yaml
+# Or via Docker (mount host content/ so media files and YAML are visible):
+docker compose run --rm -v "$PWD/content:/app/content" bot python -m cli.seed images content/images.yaml
 ```
 
 The seeder uploads the file, captures the `file_id`, and upserts a `media_assets` +
