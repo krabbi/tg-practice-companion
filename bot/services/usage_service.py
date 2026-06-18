@@ -64,11 +64,13 @@ class UsageService:
         model: str,
         usage: anthropic.types.Usage | None = None,
         audio_seconds: float | None = None,
+        user_id: int | None = None,
     ) -> ApiUsageLog:
         """Compute cost_usd, insert an ApiUsageLog row, and return it.
 
         For LLM calls pass *usage* (the anthropic Usage object).
         For transcription calls pass *audio_seconds* instead.
+        Pass *user_id* to associate the log row with a specific user.
         The caller is responsible for the surrounding transaction commit.
         """
         if usage is not None:
@@ -90,6 +92,7 @@ class UsageService:
         log.output_tokens = output_tokens
         log.audio_seconds = audio_seconds
         log.cost_usd = cost_usd
+        log.user_id = user_id
 
         logger.debug(
             "record: kind=%s model=%s cost_usd=%.6f",

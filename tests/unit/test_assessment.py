@@ -85,7 +85,9 @@ async def test_record_yes_stores_leads_to_goals_true_via_button() -> None:
     new_a = make_assessment(entry.id, leads_to_goals=True, set_via="button")
     svc, assessment_repo, _, _, session = make_service(entry=entry, new_assessment=new_a)
 
-    result = await svc.record(journal_entry_id=entry.id, leads_to_goals=True, set_via="button")
+    result = await svc.record(
+        user_id=123, journal_entry_id=entry.id, leads_to_goals=True, set_via="button"
+    )
 
     assessment_repo.create.assert_awaited_once_with(
         journal_entry_id=entry.id, leads_to_goals=True, set_via="button"
@@ -103,7 +105,9 @@ async def test_record_no_stores_leads_to_goals_false_via_button() -> None:
     new_a = make_assessment(entry.id, leads_to_goals=False, set_via="button")
     svc, assessment_repo, _, _, session = make_service(entry=entry, new_assessment=new_a)
 
-    result = await svc.record(journal_entry_id=entry.id, leads_to_goals=False, set_via="button")
+    result = await svc.record(
+        user_id=123, journal_entry_id=entry.id, leads_to_goals=False, set_via="button"
+    )
 
     _, kwargs = assessment_repo.create.call_args
     assert kwargs["leads_to_goals"] is False
@@ -117,7 +121,9 @@ async def test_record_raises_when_entry_not_found() -> None:
     svc, _, _, _, _ = make_service(entry=None)
 
     with pytest.raises(AssessmentError, match="not found"):
-        await svc.record(journal_entry_id=uuid.uuid4(), leads_to_goals=True, set_via="button")
+        await svc.record(
+            user_id=123, journal_entry_id=uuid.uuid4(), leads_to_goals=True, set_via="button"
+        )
 
 
 @pytest.mark.asyncio
@@ -128,7 +134,9 @@ async def test_record_raises_when_assessment_already_exists() -> None:
     svc, _, _, _, _ = make_service(entry=entry, existing_assessment=existing)
 
     with pytest.raises(AssessmentError, match="already has"):
-        await svc.record(journal_entry_id=entry.id, leads_to_goals=True, set_via="button")
+        await svc.record(
+            user_id=123, journal_entry_id=entry.id, leads_to_goals=True, set_via="button"
+        )
 
 
 @pytest.mark.asyncio
@@ -137,7 +145,9 @@ async def test_record_does_not_commit_on_error() -> None:
     svc, _, _, _, session = make_service(entry=None)
 
     with pytest.raises(AssessmentError):
-        await svc.record(journal_entry_id=uuid.uuid4(), leads_to_goals=True, set_via="button")
+        await svc.record(
+            user_id=123, journal_entry_id=uuid.uuid4(), leads_to_goals=True, set_via="button"
+        )
 
     session.commit.assert_not_awaited()
 
@@ -153,7 +163,7 @@ async def test_needs_clarify_true_when_no_assessment() -> None:
     entry = make_entry()
     svc, assessment_repo, _, _, _ = make_service(entry=entry, existing_assessment=None)
 
-    result = await svc.needs_clarify(entry.id)
+    result = await svc.needs_clarify(entry.id, 123)
 
     assert result is True
 
@@ -165,7 +175,7 @@ async def test_needs_clarify_false_when_assessment_exists() -> None:
     existing = make_assessment(entry.id)
     svc, _, _, _, _ = make_service(entry=entry, existing_assessment=existing)
 
-    result = await svc.needs_clarify(entry.id)
+    result = await svc.needs_clarify(entry.id, 123)
 
     assert result is False
 
@@ -175,7 +185,7 @@ async def test_needs_clarify_false_when_entry_not_found() -> None:
     """needs_clarify returns False when the journal entry does not exist."""
     svc, _, _, _, _ = make_service(entry=None)
 
-    result = await svc.needs_clarify(uuid.uuid4())
+    result = await svc.needs_clarify(uuid.uuid4(), 123)
 
     assert result is False
 

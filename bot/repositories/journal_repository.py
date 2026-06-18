@@ -67,15 +67,17 @@ class JournalRepository:
         await self._session.refresh(entry)
         return entry
 
-    async def get_by_id(self, entry_id: uuid.UUID) -> JournalEntry | None:
-        """Return the JournalEntry with the given id, or None."""
+    async def get_by_id(self, entry_id: uuid.UUID, user_id: int) -> JournalEntry | None:
+        """Return the JournalEntry with the given id owned by user_id, or None."""
         result = await self._session.execute(
-            select(JournalEntry).where(JournalEntry.id == entry_id)
+            select(JournalEntry).where(JournalEntry.id == entry_id, JournalEntry.user_id == user_id)
         )
         return result.scalar_one_or_none()
 
-    async def get_by_id_with_details(self, entry_id: uuid.UUID) -> JournalEntryRow | None:
-        """Return a JournalEntryRow with joined practice name and self-assessment, or None."""
+    async def get_by_id_with_details(
+        self, entry_id: uuid.UUID, user_id: int
+    ) -> JournalEntryRow | None:
+        """Return a JournalEntryRow with joined practice name and self-assessment for user_id, or None."""
         result = await self._session.execute(
             select(
                 JournalEntry.id,
@@ -89,7 +91,7 @@ class JournalRepository:
             )
             .outerjoin(Practice, Practice.id == JournalEntry.practice_id)
             .outerjoin(SelfAssessment, SelfAssessment.journal_entry_id == JournalEntry.id)
-            .where(JournalEntry.id == entry_id)
+            .where(JournalEntry.id == entry_id, JournalEntry.user_id == user_id)
         )
         row = result.one_or_none()
         if row is None:

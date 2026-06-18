@@ -12,19 +12,19 @@ class PracticeService:
     def __init__(self, practice_repo: PracticeRepository) -> None:
         self._practice_repo = practice_repo
 
-    async def active_practices(self) -> list[Practice]:
-        """Return all active Practice rows ordered by sort_order."""
-        return await self._practice_repo.get_active_practices()
+    async def active_practices(self, user_id: int) -> list[Practice]:
+        """Return all active Practice rows for user_id ordered by sort_order."""
+        return await self._practice_repo.get_active_practices(user_id)
 
-    async def due_now(self, local_now: datetime) -> list[Practice]:
-        """Return practices that are due at the given local wall-clock time.
+    async def due_now(self, user_id: int, local_now: datetime) -> list[Practice]:
+        """Return practices that are due at the given local wall-clock time for user_id.
 
         Checks:
         - practice.active is True
         - start_date <= today <= end_date (if set)
         - periodicity matches local_now (fixed_times or every_n_hours phase)
         """
-        practices = await self._practice_repo.get_active_practices()
+        practices = await self._practice_repo.get_active_practices(user_id)
         due: list[Practice] = []
         today: date = local_now.date()
 

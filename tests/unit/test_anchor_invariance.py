@@ -35,6 +35,9 @@ def make_every_4h_practice() -> Practice:
     return p
 
 
+_USER_ID = 123456789
+
+
 def make_service(practice: Practice) -> PracticeService:
     repo = MagicMock(spec=PracticeRepository)
     repo.get_active_practices = AsyncMock(return_value=[practice])
@@ -58,7 +61,7 @@ async def test_due_hours_independent_of_send_window_start() -> None:
     # (window clipping is done in tick(), not in due_now())
     actual_due_hours: set[int] = set()
     for hour in range(24):
-        result = await svc.due_now(dt(hour))
+        result = await svc.due_now(_USER_ID, dt(hour))
         if practice in result:
             actual_due_hours.add(hour)
 
@@ -82,7 +85,7 @@ async def test_window_clips_but_does_not_shift_phase() -> None:
     due_but_outside_window: set[int] = set()
 
     for hour in range(24):
-        result = await svc.due_now(dt(hour))
+        result = await svc.due_now(_USER_ID, dt(hour))
         if practice in result:
             if send_window_start <= hour < send_window_end:
                 admitted.add(hour)
@@ -112,7 +115,7 @@ async def test_window_start_5_admits_6() -> None:
     send_window_start = 5
     send_window_end = 22
 
-    due_at_6 = await svc.due_now(dt(6))
+    due_at_6 = await svc.due_now(_USER_ID, dt(6))
     assert practice in due_at_6
     # 6 is inside [5, 22)
     assert send_window_start <= 6 < send_window_end

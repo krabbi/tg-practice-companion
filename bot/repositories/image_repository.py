@@ -30,26 +30,33 @@ class ImageRepository:
         )
         return result.scalar_one_or_none()
 
-    async def get_active(self) -> list[MotivationalImage]:
-        """Return all active motivational images."""
+    async def get_active(self, user_id: int) -> list[MotivationalImage]:
+        """Return all active motivational images for user_id."""
         result = await self._session.execute(
-            select(MotivationalImage).where(MotivationalImage.active.is_(True))
+            select(MotivationalImage).where(
+                MotivationalImage.active.is_(True), MotivationalImage.user_id == user_id
+            )
         )
         return list(result.scalars().all())
 
-    async def random_active(self) -> MotivationalImage | None:
-        """Return a uniformly random active motivational image with its media_asset, or None."""
+    async def random_active(self, user_id: int) -> MotivationalImage | None:
+        """Return a uniformly random active motivational image for user_id with its media_asset, or None."""
         result = await self._session.execute(
             select(MotivationalImage)
-            .where(MotivationalImage.active.is_(True))
+            .where(MotivationalImage.active.is_(True), MotivationalImage.user_id == user_id)
             .options(selectinload(MotivationalImage.media_asset))
         )
         images = list(result.scalars().all())
         return random.choice(images) if images else None
 
-    async def get_by_media_asset_id(self, media_asset_id: uuid.UUID) -> MotivationalImage | None:
-        """Return the MotivationalImage with the given media_asset_id, or None."""
+    async def get_by_media_asset_id(
+        self, media_asset_id: uuid.UUID, user_id: int
+    ) -> MotivationalImage | None:
+        """Return the MotivationalImage with the given media_asset_id for user_id, or None."""
         result = await self._session.execute(
-            select(MotivationalImage).where(MotivationalImage.media_asset_id == media_asset_id)
+            select(MotivationalImage).where(
+                MotivationalImage.media_asset_id == media_asset_id,
+                MotivationalImage.user_id == user_id,
+            )
         )
         return result.scalar_one_or_none()

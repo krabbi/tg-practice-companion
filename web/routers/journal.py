@@ -100,7 +100,7 @@ async def get_journal_entry(
     current_user: dict = Depends(get_current_user),  # noqa: B008
 ) -> JournalEntryOut:
     """Return a single journal entry by UUID."""
-    row = await repo.get_by_id_with_details(entry_id)
+    row = await repo.get_by_id_with_details(entry_id, current_user["id"])
     if row is None:
         raise HTTPException(status_code=404, detail="Journal entry not found")
     return _entry_out(row)

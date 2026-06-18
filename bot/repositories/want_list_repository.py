@@ -22,9 +22,11 @@ class WantListRepository:
         await self._session.refresh(item)
         return item
 
-    async def get_by_id(self, item_id: uuid.UUID) -> WantListItem | None:
-        """Return the WantListItem with the given id, or None."""
-        result = await self._session.execute(select(WantListItem).where(WantListItem.id == item_id))
+    async def get_by_id(self, item_id: uuid.UUID, user_id: int) -> WantListItem | None:
+        """Return the WantListItem with the given id owned by user_id, or None."""
+        result = await self._session.execute(
+            select(WantListItem).where(WantListItem.id == item_id, WantListItem.user_id == user_id)
+        )
         return result.scalar_one_or_none()
 
     async def list_for_user(self, user_id: int) -> list[WantListItem]:
@@ -36,9 +38,9 @@ class WantListRepository:
         )
         return list(result.scalars().all())
 
-    async def mark_done(self, item_id: uuid.UUID) -> WantListItem | None:
-        """Set done=True on the item; return updated item or None if not found."""
-        item = await self.get_by_id(item_id)
+    async def mark_done(self, item_id: uuid.UUID, user_id: int) -> WantListItem | None:
+        """Set done=True on the item for user_id; return updated item or None if not found/not owned."""
+        item = await self.get_by_id(item_id, user_id)
         if item is None:
             return None
         item.done = True
@@ -46,10 +48,10 @@ class WantListRepository:
         return item
 
     async def update(
-        self, item_id: uuid.UUID, *, text: str | None = None, done: bool | None = None
+        self, item_id: uuid.UUID, user_id: int, *, text: str | None = None, done: bool | None = None
     ) -> WantListItem | None:
-        """Update text and/or done on an item; return updated item or None if not found."""
-        item = await self.get_by_id(item_id)
+        """Update text and/or done on an item for user_id; return updated item or None if not found/not owned."""
+        item = await self.get_by_id(item_id, user_id)
         if item is None:
             return None
         if text is not None:
@@ -59,9 +61,9 @@ class WantListRepository:
         await self._session.flush()
         return item
 
-    async def delete(self, item_id: uuid.UUID) -> bool:
-        """Delete the item by id; return True if deleted, False if not found."""
-        item = await self.get_by_id(item_id)
+    async def delete(self, item_id: uuid.UUID, user_id: int) -> bool:
+        """Delete the item for user_id; return True if deleted, False if not found/not owned."""
+        item = await self.get_by_id(item_id, user_id)
         if item is None:
             return False
         await self._session.delete(item)

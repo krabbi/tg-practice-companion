@@ -133,20 +133,20 @@ def _make_service(
 async def list_practices(
     active: bool | None = None,
     service: PracticeAdminService = Depends(_make_service),  # noqa: B008
-    _: dict = Depends(get_current_user),  # noqa: B008
+    current_user: dict = Depends(get_current_user),  # noqa: B008
 ) -> list:
     """List all practices, optionally filtered by ?active=true|false."""
-    return await service.list_all(active)
+    return await service.list_all(current_user["id"], active)
 
 
 @router.get("/{practice_id}", response_model=PracticeResponse)
 async def get_practice(
     practice_id: uuid.UUID,
     service: PracticeAdminService = Depends(_make_service),  # noqa: B008
-    _: dict = Depends(get_current_user),  # noqa: B008
+    current_user: dict = Depends(get_current_user),  # noqa: B008
 ) -> object:
     """Return a single practice by UUID."""
-    practice = await service.get(practice_id)
+    practice = await service.get(practice_id, current_user["id"])
     if practice is None:
         raise HTTPException(status_code=404, detail="Practice not found")
     return practice
@@ -170,12 +170,12 @@ async def update_practice(
     practice_id: uuid.UUID,
     body: PracticeUpdate,
     service: PracticeAdminService = Depends(_make_service),  # noqa: B008
-    _: dict = Depends(get_current_user),  # noqa: B008
+    current_user: dict = Depends(get_current_user),  # noqa: B008
 ) -> object:
     """Partially update a practice (only supplied fields are changed)."""
     updates = body.model_dump(exclude_unset=True)
     try:
-        practice = await service.update(practice_id, updates)
+        practice = await service.update(practice_id, current_user["id"], updates)
     except PracticeValidationError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     if practice is None:
@@ -187,9 +187,9 @@ async def update_practice(
 async def delete_practice(
     practice_id: uuid.UUID,
     service: PracticeAdminService = Depends(_make_service),  # noqa: B008
-    _: dict = Depends(get_current_user),  # noqa: B008
+    current_user: dict = Depends(get_current_user),  # noqa: B008
 ) -> None:
     """Delete a practice by UUID."""
-    found = await service.delete(practice_id)
+    found = await service.delete(practice_id, current_user["id"])
     if not found:
         raise HTTPException(status_code=404, detail="Practice not found")

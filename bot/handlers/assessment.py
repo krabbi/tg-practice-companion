@@ -45,6 +45,7 @@ def create_router() -> Router:
 
         try:
             await assessment_service.record(
+                user_id=callback.from_user.id,
                 journal_entry_id=entry_id,
                 leads_to_goals=leads_to_goals,
                 set_via="button",

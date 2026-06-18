@@ -52,10 +52,10 @@ def _make_service(session: AsyncSession = Depends(get_db_session)) -> BlessingAd
 @router.get("", response_model=list[BlessingResponse])
 async def list_blessings(
     service: BlessingAdminService = Depends(_make_service),  # noqa: B008
-    _: dict = Depends(get_current_user),  # noqa: B008
+    current_user: dict = Depends(get_current_user),  # noqa: B008
 ) -> list:
     """List all morning blessings ordered by rotation_order."""
-    return await service.list_all()
+    return await service.list_all(current_user["id"])
 
 
 @router.post("", response_model=BlessingResponse, status_code=201)
@@ -72,14 +72,14 @@ async def create_blessing(
 async def reorder_blessings(
     body: BlessingReorder,
     service: BlessingAdminService = Depends(_make_service),  # noqa: B008
-    _: dict = Depends(get_current_user),  # noqa: B008
+    current_user: dict = Depends(get_current_user),  # noqa: B008
 ) -> list:
     """Reassign rotation_order 1..N to all blessings in the supplied order.
 
     The request must include every existing blessing ID exactly once.
     """
     try:
-        return await service.reorder(body.ids)
+        return await service.reorder(body.ids, current_user["id"])
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -89,11 +89,11 @@ async def update_blessing(
     blessing_id: uuid.UUID,
     body: BlessingUpdate,
     service: BlessingAdminService = Depends(_make_service),  # noqa: B008
-    _: dict = Depends(get_current_user),  # noqa: B008
+    current_user: dict = Depends(get_current_user),  # noqa: B008
 ) -> object:
     """Partially update a morning blessing (text and/or active)."""
     updates = body.model_dump(exclude_unset=True)
-    blessing = await service.update(blessing_id, **updates)
+    blessing = await service.update(blessing_id, current_user["id"], **updates)
     if blessing is None:
         raise HTTPException(status_code=404, detail="Blessing not found")
     return blessing
@@ -103,9 +103,9 @@ async def update_blessing(
 async def delete_blessing(
     blessing_id: uuid.UUID,
     service: BlessingAdminService = Depends(_make_service),  # noqa: B008
-    _: dict = Depends(get_current_user),  # noqa: B008
+    current_user: dict = Depends(get_current_user),  # noqa: B008
 ) -> None:
     """Delete a morning blessing by UUID."""
-    found = await service.delete(blessing_id)
+    found = await service.delete(blessing_id, current_user["id"])
     if not found:
         raise HTTPException(status_code=404, detail="Blessing not found")

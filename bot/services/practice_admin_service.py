@@ -64,13 +64,16 @@ class PracticeAdminService:
             if bad:
                 raise PracticeValidationError(f"Invalid HH:MM schedule_times entries: {bad!r}")
 
-    async def list_all(self, active: bool | None = None) -> list[Practice]:
-        """Return all practices, optionally filtered by active status."""
-        return await self._repo.list_all(active)
+    async def list_all(self, user_id: int, active: bool | None = None) -> list[Practice]:
+        """Return all practices for user_id, optionally filtered by active status."""
+        return await self._repo.list_all(user_id, active)
 
-    async def get(self, practice_id: uuid.UUID) -> Practice | None:
-        """Return a practice by UUID, or None."""
-        return await self._repo.get_by_id(practice_id)
+    async def get(self, practice_id: uuid.UUID, user_id: int) -> Practice | None:
+        """Return a practice by UUID for user_id, or None if not found or not owned."""
+        practice = await self._repo.get_by_id(practice_id)
+        if practice is None or practice.user_id != user_id:
+            return None
+        return practice
 
     async def create(
         self,
@@ -113,10 +116,10 @@ class PracticeAdminService:
         await self._session.commit()
         return practice
 
-    async def update(self, practice_id: uuid.UUID, updates: dict) -> Practice | None:
-        """Apply a partial update and commit; raises PracticeValidationError on violations."""
+    async def update(self, practice_id: uuid.UUID, user_id: int, updates: dict) -> Practice | None:
+        """Apply a partial update for user_id and commit; raises PracticeValidationError on violations."""
         practice = await self._repo.get_by_id(practice_id)
-        if practice is None:
+        if practice is None or practice.user_id != user_id:
             return None
         for field, value in updates.items():
             setattr(practice, field, value)
@@ -131,9 +134,9 @@ class PracticeAdminService:
         await self._session.commit()
         return practice
 
-    async def delete(self, practice_id: uuid.UUID) -> bool:
-        """Delete a Practice by UUID and commit. Returns False when not found."""
-        found = await self._repo.delete(practice_id)
+    async def delete(self, practice_id: uuid.UUID, user_id: int) -> bool:
+        """Delete a Practice by UUID for user_id and commit. Returns False when not found or not owned."""
+        found = await self._repo.delete(practice_id, user_id)
         if found:
             await self._session.commit()
         return found

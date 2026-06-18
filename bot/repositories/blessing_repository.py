@@ -28,26 +28,33 @@ class BlessingRepository:
         )
         return result.scalar_one_or_none()
 
-    async def get_active_ordered(self) -> list[MorningBlessing]:
-        """Return all active blessings ordered by rotation_order ascending."""
+    async def get_active_ordered(self, user_id: int) -> list[MorningBlessing]:
+        """Return all active blessings for user_id ordered by rotation_order ascending."""
         result = await self._session.execute(
             select(MorningBlessing)
-            .where(MorningBlessing.active.is_(True))
+            .where(MorningBlessing.active.is_(True), MorningBlessing.user_id == user_id)
             .order_by(MorningBlessing.rotation_order)
         )
         return list(result.scalars().all())
 
-    async def get_by_rotation_order(self, rotation_order: int) -> MorningBlessing | None:
-        """Return the blessing with the given rotation_order, or None."""
+    async def get_by_rotation_order(
+        self, rotation_order: int, user_id: int
+    ) -> MorningBlessing | None:
+        """Return the blessing with the given rotation_order for user_id, or None."""
         result = await self._session.execute(
-            select(MorningBlessing).where(MorningBlessing.rotation_order == rotation_order)
+            select(MorningBlessing).where(
+                MorningBlessing.rotation_order == rotation_order,
+                MorningBlessing.user_id == user_id,
+            )
         )
         return result.scalar_one_or_none()
 
-    async def list_all(self) -> list[MorningBlessing]:
-        """Return all blessings ordered by rotation_order ascending."""
+    async def list_all(self, user_id: int) -> list[MorningBlessing]:
+        """Return all blessings for user_id ordered by rotation_order ascending."""
         result = await self._session.execute(
-            select(MorningBlessing).order_by(MorningBlessing.rotation_order)
+            select(MorningBlessing)
+            .where(MorningBlessing.user_id == user_id)
+            .order_by(MorningBlessing.rotation_order)
         )
         return list(result.scalars().all())
 
@@ -66,13 +73,14 @@ class BlessingRepository:
     async def update(
         self,
         blessing_id: uuid.UUID,
+        user_id: int,
         *,
         text: str | None = None,
         active: bool | None = None,
     ) -> MorningBlessing | None:
-        """Update text and/or active on a blessing; return updated row or None if not found."""
+        """Update text and/or active on a blessing for user_id; return updated row or None if not found/not owned."""
         blessing = await self.get_by_id(blessing_id)
-        if blessing is None:
+        if blessing is None or blessing.user_id != user_id:
             return None
         if text is not None:
             blessing.text = text
@@ -81,26 +89,29 @@ class BlessingRepository:
         await self._session.flush()
         return blessing
 
-    async def delete(self, blessing_id: uuid.UUID) -> bool:
-        """Delete a blessing by id; return True if deleted, False if not found."""
+    async def delete(self, blessing_id: uuid.UUID, user_id: int) -> bool:
+        """Delete a blessing for user_id; return True if deleted, False if not found or not owned."""
         blessing = await self.get_by_id(blessing_id)
-        if blessing is None:
+        if blessing is None or blessing.user_id != user_id:
             return False
         await self._session.delete(blessing)
         await self._session.flush()
         return True
 
-    async def reorder(self, blessing_ids: list[uuid.UUID]) -> list[MorningBlessing]:
+    async def reorder(self, blessing_ids: list[uuid.UUID], user_id: int) -> list[MorningBlessing]:
         """Assign rotation_order 1..N to the given blessing IDs in the supplied order.
 
         Uses a two-pass approach to avoid violating the unique constraint during reassignment:
         first move all items to a large temporary offset, then assign final values.
+        Raises KeyError for unknown IDs; raises PermissionError if any ID belongs to another user.
         """
         blessings = []
         for bid in blessing_ids:
             b = await self.get_by_id(bid)
             if b is None:
                 raise KeyError(str(bid))
+            if b.user_id != user_id:
+                raise PermissionError(f"Blessing {bid} does not belong to user {user_id}")
             blessings.append(b)
 
         # Pass 1: assign unique values well above any realistic rotation_order.

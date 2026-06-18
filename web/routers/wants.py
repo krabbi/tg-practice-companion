@@ -68,11 +68,11 @@ async def update_want(
     want_id: uuid.UUID,
     body: WantUpdate,
     service: WantAdminService = Depends(_make_service),  # noqa: B008
-    _: dict = Depends(get_current_user),  # noqa: B008
+    current_user: dict = Depends(get_current_user),  # noqa: B008
 ) -> object:
     """Partially update a want-list item (text and/or done)."""
     updates = body.model_dump(exclude_unset=True)
-    item = await service.update(want_id, **updates)
+    item = await service.update(want_id, current_user["id"], **updates)
     if item is None:
         raise HTTPException(status_code=404, detail="Want not found")
     return item
@@ -82,9 +82,9 @@ async def update_want(
 async def delete_want(
     want_id: uuid.UUID,
     service: WantAdminService = Depends(_make_service),  # noqa: B008
-    _: dict = Depends(get_current_user),  # noqa: B008
+    current_user: dict = Depends(get_current_user),  # noqa: B008
 ) -> None:
     """Delete a want-list item by UUID."""
-    found = await service.delete(want_id)
+    found = await service.delete(want_id, current_user["id"])
     if not found:
         raise HTTPException(status_code=404, detail="Want not found")

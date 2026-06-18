@@ -174,7 +174,7 @@ async def test_journal_repository_create_and_get(db_session: AsyncSession) -> No
     )
     await db_session.commit()
 
-    fetched = await repo.get_by_id(entry.id)
+    fetched = await repo.get_by_id(entry.id, 111)
     assert fetched is not None
     assert fetched.text == "мысль"
     assert fetched.source == "text"
@@ -195,7 +195,7 @@ async def test_journal_repository_create_voice_entry(db_session: AsyncSession) -
     )
     await db_session.commit()
 
-    fetched = await repo.get_by_id(entry.id)
+    fetched = await repo.get_by_id(entry.id, 222)
     assert fetched is not None
     assert fetched.source == "voice"
     assert fetched.practice_id is None
@@ -207,7 +207,7 @@ async def test_journal_repository_get_by_id_returns_none_for_unknown(
 ) -> None:
     """get_by_id returns None for a non-existent entry."""
     repo = JournalRepository(db_session)
-    result = await repo.get_by_id(uuid.uuid4())
+    result = await repo.get_by_id(uuid.uuid4(), 111)
     assert result is None
 
 
@@ -232,7 +232,7 @@ async def test_self_assessment_create_and_fetch(db_session: AsyncSession) -> Non
     )
     await db_session.commit()
 
-    fetched = await assessment_repo.get_by_entry_id(entry.id)
+    fetched = await assessment_repo.get_by_entry_id(entry.id, 111)
     assert fetched is not None
     assert fetched.id == assessment.id
     assert fetched.leads_to_goals is True
@@ -245,7 +245,7 @@ async def test_self_assessment_get_by_entry_id_returns_none_when_absent(
 ) -> None:
     """get_by_entry_id returns None when no assessment exists for the entry."""
     assessment_repo = SelfAssessmentRepository(db_session)
-    result = await assessment_repo.get_by_entry_id(uuid.uuid4())
+    result = await assessment_repo.get_by_entry_id(uuid.uuid4(), 111)
     assert result is None
 
 
@@ -265,7 +265,7 @@ async def test_self_assessment_clarify_set_via(db_session: AsyncSession) -> None
     )
     await db_session.commit()
 
-    fetched = await assessment_repo.get_by_entry_id(entry.id)
+    fetched = await assessment_repo.get_by_entry_id(entry.id, 222)
     assert fetched is not None
     assert fetched.set_via == "clarify"
     assert fetched.leads_to_goals is False

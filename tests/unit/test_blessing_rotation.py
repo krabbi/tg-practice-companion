@@ -18,6 +18,8 @@ from bot.repositories.blessing_repository import BlessingRepository
 from bot.scheduler import compose
 from bot.services.blessing_service import BlessingService
 
+_USER_ID = 123456789
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -62,7 +64,7 @@ async def test_for_date_returns_none_when_no_blessings() -> None:
     mock_repo.get_active_ordered = AsyncMock(return_value=[])
     svc = BlessingService(mock_repo)
 
-    result = await svc.for_date(date(2026, 6, 10))
+    result = await svc.for_date(_USER_ID, date(2026, 6, 10))
     assert result is None
 
 
@@ -84,7 +86,7 @@ async def test_for_date_consecutive_days_cycle_rotation_order() -> None:
     svc = BlessingService(mock_repo)
 
     # Collect 4 consecutive days
-    results = [await svc.for_date(date(2026, 6, 10 + i)) for i in range(4)]
+    results = [await svc.for_date(_USER_ID, date(2026, 6, 10 + i)) for i in range(4)]
 
     texts = [r.text for r in results]
     # First three days must all be different blessings
@@ -102,7 +104,7 @@ async def test_for_date_wraps_after_last_blessing() -> None:
     svc = BlessingService(mock_repo)
 
     # Collect enough days to see the wrap
-    texts = [await svc.for_date(date(2026, 6, 10 + i)) for i in range(4)]
+    texts = [await svc.for_date(_USER_ID, date(2026, 6, 10 + i)) for i in range(4)]
     texts = [b.text for b in texts]
     # Pattern must alternate: (X,Y) or (Y,X) repeating — exactly 2 distinct values
     assert len(set(texts)) == 2
@@ -120,7 +122,7 @@ async def test_for_date_single_blessing_always_returns_same() -> None:
     svc = BlessingService(mock_repo)
 
     for day in range(1, 5):
-        result = await svc.for_date(date(2026, 6, 10 + day))
+        result = await svc.for_date(_USER_ID, date(2026, 6, 10 + day))
         assert result is not None
         assert result.text == "The one blessing"
 
@@ -134,8 +136,8 @@ async def test_for_date_same_date_idempotent() -> None:
     svc = BlessingService(mock_repo)
 
     d = date(2026, 6, 10)
-    first = await svc.for_date(d)
-    second = await svc.for_date(d)
+    first = await svc.for_date(_USER_ID, d)
+    second = await svc.for_date(_USER_ID, d)
     assert first is not None and second is not None
     assert first.text == second.text
 

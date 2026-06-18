@@ -15,13 +15,13 @@ class BlessingAdminService:
         self._session = session
         self._repo = repo
 
-    async def list_all(self) -> list[MorningBlessing]:
-        """Return all blessings ordered by rotation_order."""
-        return await self._repo.list_all()
+    async def list_all(self, user_id: int) -> list[MorningBlessing]:
+        """Return all blessings for user_id ordered by rotation_order."""
+        return await self._repo.list_all(user_id)
 
     async def create(self, *, user_id: int, text: str, active: bool = True) -> MorningBlessing:
         """Create a new blessing appended to the end of the rotation order and commit."""
-        existing = await self._repo.list_all()
+        existing = await self._repo.list_all(user_id)
         next_order = (max((b.rotation_order for b in existing), default=0)) + 1
         blessing = await self._repo.create(
             user_id=user_id, text=text, rotation_order=next_order, active=active
@@ -32,31 +32,32 @@ class BlessingAdminService:
     async def update(
         self,
         blessing_id: uuid.UUID,
+        user_id: int,
         *,
         text: str | None = None,
         active: bool | None = None,
     ) -> MorningBlessing | None:
-        """Update text and/or active; commit and return row, or None if not found."""
-        blessing = await self._repo.update(blessing_id, text=text, active=active)
+        """Update text and/or active for user_id; commit and return row, or None if not found/not owned."""
+        blessing = await self._repo.update(blessing_id, user_id, text=text, active=active)
         if blessing is None:
             return None
         await self._session.commit()
         return blessing
 
-    async def delete(self, blessing_id: uuid.UUID) -> bool:
-        """Delete blessing by id; commit and return True, or False if not found."""
-        found = await self._repo.delete(blessing_id)
+    async def delete(self, blessing_id: uuid.UUID, user_id: int) -> bool:
+        """Delete blessing for user_id; commit and return True, or False if not found/not owned."""
+        found = await self._repo.delete(blessing_id, user_id)
         if found:
             await self._session.commit()
         return found
 
-    async def reorder(self, blessing_ids: list[uuid.UUID]) -> list[MorningBlessing]:
+    async def reorder(self, blessing_ids: list[uuid.UUID], user_id: int) -> list[MorningBlessing]:
         """Reassign rotation_order 1..N to the given IDs in the supplied order and commit.
 
-        All existing blessing IDs must be included; raises ValueError if any are missing
+        All existing blessing IDs for user_id must be included; raises ValueError if any are missing
         or if the list includes unknown IDs.
         """
-        existing = await self._repo.list_all()
+        existing = await self._repo.list_all(user_id)
         existing_ids = {b.id for b in existing}
         input_ids = set(blessing_ids)
 
@@ -68,6 +69,6 @@ class BlessingAdminService:
         if missing:
             raise ValueError(f"Missing blessing IDs (all must be included): {missing!r}")
 
-        blessings = await self._repo.reorder(blessing_ids)
+        blessings = await self._repo.reorder(blessing_ids, user_id)
         await self._session.commit()
         return blessings

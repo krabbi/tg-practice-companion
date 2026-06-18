@@ -104,7 +104,7 @@ async def test_seed_practices_creates_rows(db_session: object, fake_config: obje
         await seed_practices(PRACTICES_EXAMPLE)
 
     repo = PracticeRepository(db_session)
-    practices = await repo.get_active_practices()
+    practices = await repo.get_active_practices(123456789)
     assert len(practices) > 0
 
     names = {p.name for p in practices}
@@ -125,7 +125,7 @@ async def test_seed_practices_idempotent(db_session: object, fake_config: object
         await seed_practices(PRACTICES_EXAMPLE)
 
     repo = PracticeRepository(db_session)
-    practices = await repo.get_active_practices()
+    practices = await repo.get_active_practices(123456789)
     names = [p.name for p in practices]
     # No duplicate names
     assert len(names) == len(set(names))
@@ -142,11 +142,11 @@ async def test_seed_practices_audio_creates_media_asset(
         await seed_practices(PRACTICES_EXAMPLE)
 
     repo = PracticeRepository(db_session)
-    practice = await repo.get_by_name("Night hypnosis")
+    practice = await repo.get_by_name("Night hypnosis", 123456789)
     assert practice is not None
     assert practice.media_asset_id is not None
 
-    asset = await repo.get_media_asset_by_id(practice.media_asset_id)
+    asset = await repo.get_media_asset_by_id(practice.media_asset_id, 123456789)
     assert asset is not None
     assert asset.telegram_file_id == "CQACAgIAAxk..."
     assert asset.storage_path is None  # Stage 1 invariant
@@ -215,7 +215,7 @@ async def test_seed_blessings_creates_rows(db_session: object, fake_config: obje
             await seed_blessings(tmp_path)
 
         repo = BlessingRepository(db_session)
-        blessings = await repo.get_active_ordered()
+        blessings = await repo.get_active_ordered(123456789)
         assert len(blessings) == 2
         assert blessings[0].text == "Good morning 1"
         assert blessings[1].text == "Good morning 2"
@@ -249,7 +249,7 @@ async def test_seed_blessings_idempotent(db_session: object, fake_config: object
             await seed_blessings(tmp2_path)
 
         repo = BlessingRepository(db_session)
-        blessings = await repo.get_active_ordered()
+        blessings = await repo.get_active_ordered(123456789)
         assert len(blessings) == 1
         assert blessings[0].text == "Updated"
     finally:
@@ -294,7 +294,7 @@ async def test_seed_images_creates_media_asset_and_motivational_image(
     assert asset.mime == "image/jpeg"
 
     image_repo = ImageRepository(db_session)
-    motiv_img = await image_repo.get_by_media_asset_id(asset.id)
+    motiv_img = await image_repo.get_by_media_asset_id(asset.id, 123456789)
     assert motiv_img is not None
     assert motiv_img.active is True
     assert motiv_img.media_asset_id == asset.id
@@ -336,7 +336,7 @@ async def test_seed_images_idempotent(
     assert len(assets) == 1
 
     image_repo = ImageRepository(db_session)
-    imgs = await image_repo.get_active()
+    imgs = await image_repo.get_active(123456789)
     mi_for_asset = [i for i in imgs if i.media_asset_id == assets[0].id]
     assert len(mi_for_asset) == 1
 
@@ -390,7 +390,7 @@ async def test_seed_audio_creates_media_asset_on_practice(
     await db_session.refresh(practice)
     assert practice.media_asset_id is not None
 
-    asset = await practice_repo.get_media_asset_by_id(practice.media_asset_id)
+    asset = await practice_repo.get_media_asset_by_id(practice.media_asset_id, 123456789)
     assert asset is not None
     assert asset.kind == "audio"
     assert asset.telegram_file_id == "TG_FILE_ID_AUDIO_001"
