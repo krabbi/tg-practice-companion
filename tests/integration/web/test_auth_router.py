@@ -6,7 +6,7 @@ import json
 import time
 from urllib.parse import urlencode
 
-import pytest
+import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
@@ -58,7 +58,7 @@ def _make_init_data(
     return urlencode(params)
 
 
-@pytest.fixture
+@pytest_asyncio.fixture
 async def client_with_db():
     """AsyncClient with isolated in-memory SQLite and get_db_session overridden."""
     engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
@@ -82,7 +82,7 @@ async def client_with_db():
     await engine.dispose()
 
 
-@pytest.fixture
+@pytest_asyncio.fixture
 async def open_client_with_db():
     """AsyncClient with empty allowed_user_ids (open-access mode) and DB."""
     engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
