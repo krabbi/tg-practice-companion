@@ -58,6 +58,14 @@ class DependencyMiddleware(BaseMiddleware):
             want_list_repo = WantListRepository(session)
             good_deed_repo = GoodDeedRepository(session)
 
+            # Provision the User row on first contact
+            event_from_user = data.get("event_from_user")
+            if event_from_user is not None:
+                await user_repo.get_or_create(
+                    event_from_user.id, language=self._config.default_language
+                )
+                await session.commit()
+
             # Services
             data["skip_day_service"] = SkipDayService(session, user_repo)
             data["timezone_service"] = TimezoneService(session, user_repo)

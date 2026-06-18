@@ -31,7 +31,7 @@ async def get_current_user(
         raise HTTPException(status_code=401, detail="Invalid or expired token")
 
     user_id = claims.get("id")
-    if user_id not in config.allowed_user_ids:
+    if config.allowed_user_ids and user_id not in config.allowed_user_ids:
         raise HTTPException(status_code=403, detail="Not in allowlist")
 
     return claims

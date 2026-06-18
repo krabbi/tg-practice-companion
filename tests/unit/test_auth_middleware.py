@@ -86,12 +86,26 @@ async def test_multiple_allowed_ids() -> None:
 
 
 @pytest.mark.asyncio
-async def test_empty_whitelist_drops_all() -> None:
-    """Drop every update when the whitelist is empty."""
+async def test_empty_whitelist_allows_all() -> None:
+    """Allow any identified user when the whitelist is empty (open-access mode)."""
     middleware = make_middleware(allowed=[])
-    handler = AsyncMock()
+    handler = AsyncMock(return_value="ok")
     event = MagicMock()
     data = make_update_data(user_id=42)
+
+    result = await middleware(handler, event, data)
+
+    handler.assert_awaited_once_with(event, data)
+    assert result == "ok"
+
+
+@pytest.mark.asyncio
+async def test_non_empty_whitelist_still_enforced() -> None:
+    """When the whitelist is non-empty, unknown users are still dropped."""
+    middleware = make_middleware(allowed=[42])
+    handler = AsyncMock()
+    event = MagicMock()
+    data = make_update_data(user_id=99)
 
     result = await middleware(handler, event, data)
 

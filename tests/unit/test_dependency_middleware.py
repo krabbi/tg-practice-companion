@@ -128,6 +128,81 @@ async def test_call_returns_handler_return_value() -> None:
 
 
 @pytest.mark.asyncio
+async def test_provisioning_calls_get_or_create_when_event_user_present() -> None:
+    """DependencyMiddleware calls user_repo.get_or_create when event_from_user is present."""
+    mock_session = MagicMock()
+    mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+    mock_session.__aexit__ = AsyncMock(return_value=False)
+    mock_session.commit = AsyncMock()
+    mock_factory = MagicMock(return_value=mock_session)
+
+    config = MagicMock()
+    config.default_language = "ru"
+    config.groq_api_key = ""
+    mw = DependencyMiddleware(session_factory=mock_factory, config=config)
+
+    user_mock = MagicMock()
+    user_mock.id = 42
+
+    mock_user_repo_instance = MagicMock()
+    mock_user_repo_instance.get_or_create = AsyncMock(return_value=MagicMock())
+
+    async def handler(event: Any, data: dict[str, Any]) -> str:
+        return "ok"
+
+    with (
+        patch("bot.middlewares.dependency.UserRepository", return_value=mock_user_repo_instance),
+        patch("bot.middlewares.dependency.PracticeRepository"),
+        patch("bot.middlewares.dependency.PracticeSendRepository"),
+        patch("bot.middlewares.dependency.SkipDayService"),
+        patch("bot.middlewares.dependency.TimezoneService"),
+        patch("bot.middlewares.dependency.PracticeService"),
+        patch("bot.middlewares.dependency.DeliveryService"),
+    ):
+        result = await mw(handler, MagicMock(), {"event_from_user": user_mock})
+
+    assert result == "ok"
+    mock_user_repo_instance.get_or_create.assert_awaited_once_with(42, language="ru")
+    mock_session.commit.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_provisioning_skipped_when_no_event_user() -> None:
+    """DependencyMiddleware skips provisioning when event_from_user is absent."""
+    mock_session = MagicMock()
+    mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+    mock_session.__aexit__ = AsyncMock(return_value=False)
+    mock_session.commit = AsyncMock()
+    mock_factory = MagicMock(return_value=mock_session)
+
+    config = MagicMock()
+    config.default_language = "ru"
+    config.groq_api_key = ""
+    mw = DependencyMiddleware(session_factory=mock_factory, config=config)
+
+    mock_user_repo_instance = MagicMock()
+    mock_user_repo_instance.get_or_create = AsyncMock(return_value=MagicMock())
+
+    async def handler(event: Any, data: dict[str, Any]) -> str:
+        return "ok"
+
+    with (
+        patch("bot.middlewares.dependency.UserRepository", return_value=mock_user_repo_instance),
+        patch("bot.middlewares.dependency.PracticeRepository"),
+        patch("bot.middlewares.dependency.PracticeSendRepository"),
+        patch("bot.middlewares.dependency.SkipDayService"),
+        patch("bot.middlewares.dependency.TimezoneService"),
+        patch("bot.middlewares.dependency.PracticeService"),
+        patch("bot.middlewares.dependency.DeliveryService"),
+    ):
+        result = await mw(handler, MagicMock(), {})
+
+    assert result == "ok"
+    mock_user_repo_instance.get_or_create.assert_not_awaited()
+    mock_session.commit.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_delivery_service_gets_event_bot_when_bot_absent() -> None:
     """When data has no 'bot' key, DeliveryService must be built with event_bot."""
     mw, _ = make_middleware()
