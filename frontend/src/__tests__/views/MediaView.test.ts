@@ -10,11 +10,13 @@ const {
   mockUploadMediaAsset,
   mockDeleteMediaAsset,
   mockCreateMotivationalImage,
+  mockGetMediaUrl,
 } = vi.hoisted(() => ({
   mockListMediaAssets: vi.fn(),
   mockUploadMediaAsset: vi.fn(),
   mockDeleteMediaAsset: vi.fn(),
   mockCreateMotivationalImage: vi.fn(),
+  mockGetMediaUrl: vi.fn(),
 }))
 
 vi.mock('@/api/media', () => ({
@@ -22,6 +24,7 @@ vi.mock('@/api/media', () => ({
   uploadMediaAsset: mockUploadMediaAsset,
   deleteMediaAsset: mockDeleteMediaAsset,
   createMotivationalImage: mockCreateMotivationalImage,
+  getMediaUrl: mockGetMediaUrl,
 }))
 
 const IMAGE_ASSET: MediaAsset = {
@@ -49,6 +52,7 @@ describe('MediaView', () => {
     setActivePinia(createPinia())
     vi.clearAllMocks()
     mockListMediaAssets.mockResolvedValue([])
+    mockGetMediaUrl.mockResolvedValue({ url: 'https://s3.example.com/img.jpg', expires_in: 900 })
   })
 
   afterEach(() => {
@@ -174,5 +178,80 @@ describe('MediaView', () => {
     await flushPromises()
 
     expect(wrapper.text()).toContain('Storage unavailable')
+  })
+
+  it('clicking "Просмотр" on an image row fetches a presigned URL and renders a thumbnail', async () => {
+    mockListMediaAssets.mockResolvedValueOnce([IMAGE_ASSET])
+    mockGetMediaUrl.mockResolvedValueOnce({
+      url: 'https://s3.example.com/img.jpg?sig=abc',
+      expires_in: 900,
+    })
+
+    const wrapper = mount(MediaView)
+    await flushPromises()
+
+    const previewBtn = wrapper
+      .findAll('button')
+      .find((b) => b.text() === 'Просмотр')
+    expect(previewBtn).toBeDefined()
+    await previewBtn!.trigger('click')
+    await flushPromises()
+
+    expect(mockGetMediaUrl).toHaveBeenCalledWith(IMAGE_ASSET.id)
+    const img = wrapper.find('img.preview-image')
+    expect(img.exists()).toBe(true)
+    expect(img.attributes('src')).toBe('https://s3.example.com/img.jpg?sig=abc')
+  })
+
+  it('clicking "Просмотр" on an audio row fetches a presigned URL and renders an audio element', async () => {
+    mockListMediaAssets.mockResolvedValueOnce([AUDIO_ASSET])
+    mockGetMediaUrl.mockResolvedValueOnce({
+      url: 'https://s3.example.com/audio.mp3?sig=xyz',
+      expires_in: 900,
+    })
+
+    const wrapper = mount(MediaView)
+    await flushPromises()
+
+    const previewBtn = wrapper
+      .findAll('button')
+      .find((b) => b.text() === 'Просмотр')
+    await previewBtn!.trigger('click')
+    await flushPromises()
+
+    const audio = wrapper.find('audio.preview-audio')
+    expect(audio.exists()).toBe(true)
+    expect(audio.attributes('src')).toBe('https://s3.example.com/audio.mp3?sig=xyz')
+  })
+
+  it('preview row shows a "Скачать" download link pointing to the presigned URL', async () => {
+    mockListMediaAssets.mockResolvedValueOnce([IMAGE_ASSET])
+    mockGetMediaUrl.mockResolvedValueOnce({
+      url: 'https://s3.example.com/img.jpg?sig=abc',
+      expires_in: 900,
+    })
+
+    const wrapper = mount(MediaView)
+    await flushPromises()
+
+    await wrapper.findAll('button').find((b) => b.text() === 'Просмотр')!.trigger('click')
+    await flushPromises()
+
+    const link = wrapper.find('a[href*="s3.example.com"]')
+    expect(link.exists()).toBe(true)
+    expect(link.text()).toBe('Скачать')
+  })
+
+  it('preview row shows error message when getMediaUrl fails', async () => {
+    mockListMediaAssets.mockResolvedValueOnce([IMAGE_ASSET])
+    mockGetMediaUrl.mockRejectedValueOnce(new ApiError(404, 'Not found', 'Файл не найден'))
+
+    const wrapper = mount(MediaView)
+    await flushPromises()
+
+    await wrapper.findAll('button').find((b) => b.text() === 'Просмотр')!.trigger('click')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('Файл не найден')
   })
 })

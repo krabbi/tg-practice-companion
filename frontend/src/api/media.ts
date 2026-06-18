@@ -12,6 +12,11 @@ export interface MediaAsset {
   updated_at: string
 }
 
+export interface PresignedUrlResponse {
+  url: string
+  expires_in: number
+}
+
 export interface MotivationalImage {
   id: string
   media_asset_id: string
@@ -73,6 +78,10 @@ export function uploadMediaAsset(
 
     xhr.send(formData)
   })
+}
+
+export function getMediaUrl(id: string): Promise<PresignedUrlResponse> {
+  return apiFetch<PresignedUrlResponse>(`/api/media/${id}/url`)
 }
 
 export function listMediaAssets(kind?: 'audio' | 'image'): Promise<MediaAsset[]> {

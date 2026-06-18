@@ -6,6 +6,7 @@ import {
   listMediaAssets,
   deleteMediaAsset,
   createMotivationalImage,
+  getMediaUrl,
   type MediaAsset,
 } from '@/api/media'
 
@@ -15,6 +16,12 @@ const assets = ref<MediaAsset[]>([])
 const loading = ref(false)
 const listError = ref('')
 const kindFilter = ref<KindFilter>('all')
+
+// Per-asset preview state: id → { url, loading, error }
+const previewUrls = ref<Record<string, string>>({})
+const previewLoading = ref<Record<string, boolean>>({})
+const previewErrors = ref<Record<string, string>>({})
+const expandedIds = ref<Set<string>>(new Set())
 
 const uploadFileRef = ref<HTMLInputElement | null>(null)
 const uploadFile = ref<File | null>(null)
@@ -107,6 +114,29 @@ async function addToPool(): Promise<void> {
       e instanceof ApiError ? (e.detail ?? `Ошибка ${e.status}`) : 'Неизвестная ошибка'
   } finally {
     motivSubmitting.value = false
+  }
+}
+
+async function togglePreview(asset: MediaAsset): Promise<void> {
+  const id = asset.id
+  if (expandedIds.value.has(id)) {
+    expandedIds.value = new Set([...expandedIds.value].filter((x) => x !== id))
+    return
+  }
+  expandedIds.value = new Set([...expandedIds.value, id])
+  if (previewUrls.value[id] || previewLoading.value[id]) return
+  previewLoading.value = { ...previewLoading.value, [id]: true }
+  previewErrors.value = { ...previewErrors.value, [id]: '' }
+  try {
+    const { url } = await getMediaUrl(id)
+    previewUrls.value = { ...previewUrls.value, [id]: url }
+  } catch (e) {
+    previewErrors.value = {
+      ...previewErrors.value,
+      [id]: e instanceof ApiError ? (e.detail ?? e.message) : 'Ошибка загрузки ссылки',
+    }
+  } finally {
+    previewLoading.value = { ...previewLoading.value, [id]: false }
   }
 }
 
@@ -245,26 +275,69 @@ onMounted(loadAssets)
             </tr>
           </thead>
           <tbody>
-            <tr v-for="a in filteredAssets" :key="a.id">
-              <td>
-                <span class="kind-badge" :class="`kind-${a.kind}`">
-                  {{ a.kind === 'image' ? '🖼 Изобр.' : '🔊 Аудио' }}
-                </span>
-              </td>
-              <td class="mime-cell">{{ a.mime ?? '—' }}</td>
-              <td>
-                <div class="uuid-cell">
-                  <code class="asset-id small">{{ a.id }}</code>
-                  <button class="btn btn-sm btn-secondary" @click="copyId(a.id)">
-                    Копировать
-                  </button>
-                </div>
-              </td>
-              <td class="date-cell">{{ formatDate(a.created_at) }}</td>
-              <td>
-                <button class="btn btn-sm btn-danger" @click="removeAsset(a)">Удалить</button>
-              </td>
-            </tr>
+            <template v-for="a in filteredAssets" :key="a.id">
+              <tr>
+                <td>
+                  <span class="kind-badge" :class="`kind-${a.kind}`">
+                    {{ a.kind === 'image' ? '🖼 Изобр.' : '🔊 Аудио' }}
+                  </span>
+                </td>
+                <td class="mime-cell">{{ a.mime ?? '—' }}</td>
+                <td>
+                  <div class="uuid-cell">
+                    <code class="asset-id small">{{ a.id }}</code>
+                    <button class="btn btn-sm btn-secondary" @click="copyId(a.id)">
+                      Копировать
+                    </button>
+                  </div>
+                </td>
+                <td class="date-cell">{{ formatDate(a.created_at) }}</td>
+                <td>
+                  <div class="action-cell">
+                    <button
+                      class="btn btn-sm btn-secondary"
+                      :disabled="!a.storage_path"
+                      @click="togglePreview(a)"
+                    >
+                      {{ expandedIds.has(a.id) ? 'Скрыть' : 'Просмотр' }}
+                    </button>
+                    <button class="btn btn-sm btn-danger" @click="removeAsset(a)">Удалить</button>
+                  </div>
+                </td>
+              </tr>
+              <tr v-if="expandedIds.has(a.id)" class="preview-row">
+                <td colspan="5">
+                  <div class="preview-cell">
+                    <p v-if="previewLoading[a.id]" class="hint">Загрузка...</p>
+                    <p v-else-if="previewErrors[a.id]" class="error-msg">{{ previewErrors[a.id] }}</p>
+                    <template v-else-if="previewUrls[a.id]">
+                      <img
+                        v-if="a.kind === 'image'"
+                        :src="previewUrls[a.id]"
+                        class="preview-image"
+                        alt="Предпросмотр"
+                      />
+                      <audio
+                        v-else-if="a.kind === 'audio'"
+                        :src="previewUrls[a.id]"
+                        controls
+                        class="preview-audio"
+                      />
+                      <div class="preview-download">
+                        <a
+                          :href="previewUrls[a.id]"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          class="btn btn-sm btn-secondary"
+                        >
+                          Скачать
+                        </a>
+                      </div>
+                    </template>
+                  </div>
+                </td>
+              </tr>
+            </template>
           </tbody>
         </table>
       </div>
@@ -529,6 +602,39 @@ onMounted(loadAssets)
   white-space: nowrap;
   color: var(--tg-theme-hint-color, #777);
   font-size: 0.8rem;
+}
+
+.action-cell {
+  display: flex;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+
+.preview-row td {
+  background: var(--tg-theme-secondary-bg-color, #f9f9f9);
+  padding: 0.75rem 1rem;
+}
+
+.preview-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.preview-image {
+  max-width: 100%;
+  max-height: 300px;
+  border-radius: 6px;
+  object-fit: contain;
+}
+
+.preview-audio {
+  width: 100%;
+}
+
+.preview-download {
+  display: flex;
+  justify-content: flex-end;
 }
 
 /* Motivational form */

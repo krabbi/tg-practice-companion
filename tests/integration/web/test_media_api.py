@@ -10,6 +10,8 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from bot.config import Config
 from bot.models.base import Base
+from bot.models.practice import MediaAsset
+from bot.repositories.media_asset_repository import MediaAssetRepository
 from bot.services.storage_service import S3StorageService
 from web.auth import create_jwt
 from web.dependencies import get_db_session
@@ -62,12 +64,22 @@ def _make_mock_storage() -> S3StorageService:
 
 
 @pytest.fixture
-async def client() -> AsyncClient:
-    """AsyncClient with isolated SQLite DB, mocked S3 gateway, and a mocked Bot."""
+async def _db():
+    """Isolated in-memory SQLite DB; yields (engine, async_sessionmaker)."""
     engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     factory = async_sessionmaker(engine, expire_on_commit=False)
+    yield engine, factory
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.drop_all)
+    await engine.dispose()
+
+
+@pytest.fixture
+async def client(_db) -> AsyncClient:
+    """AsyncClient with isolated SQLite DB, mocked S3 gateway, and a mocked Bot."""
+    _engine, factory = _db
 
     async def _override_session():
         async with factory() as session:
@@ -82,10 +94,6 @@ async def client() -> AsyncClient:
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
         yield ac
-
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.drop_all)
-    await engine.dispose()
 
 
 @pytest.fixture
@@ -327,3 +335,68 @@ async def test_motivational_image_wrong_kind_returns_400(
     )
     assert resp.status_code == 400
     assert "image" in resp.json()["detail"]
+
+
+# ---------------------------------------------------------------------------
+# Presigned URL endpoint
+# ---------------------------------------------------------------------------
+
+
+async def test_get_url_without_token_returns_401(client: AsyncClient) -> None:
+    """GET /api/media/{id}/url with no token returns 401."""
+    response = await client.get(f"/api/media/{uuid.uuid4()}/url")
+    assert response.status_code == 401
+
+
+async def test_get_url_returns_presigned_url(client: AsyncClient, auth_headers: dict) -> None:
+    """GET /api/media/{id}/url returns a presigned URL and expires_in for an uploaded asset."""
+    fake_image = b"\xff\xd8\xff\xe0" + b"\x00" * 100
+    files = {"file": ("photo.jpg", io.BytesIO(fake_image), "image/jpeg")}
+    upload_resp = await client.post(
+        "/api/media", data={"kind": "image"}, files=files, headers=auth_headers
+    )
+    assert upload_resp.status_code == 201
+    asset_id = upload_resp.json()["id"]
+
+    # Make the mock storage return a fake presigned URL
+    storage: MagicMock = client._transport.app.state.storage_service  # type: ignore[attr-defined]
+    storage.generate_presigned_url.return_value = (
+        "https://s3.example.com/image/test.jpg?X-Amz-Signature=abc"
+    )
+
+    resp = await client.get(f"/api/media/{asset_id}/url", headers=auth_headers)
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["url"] == "https://s3.example.com/image/test.jpg?X-Amz-Signature=abc"
+    assert isinstance(body["expires_in"], int)
+    assert body["expires_in"] > 0
+
+
+async def test_get_url_nonexistent_asset_returns_404(
+    client: AsyncClient, auth_headers: dict
+) -> None:
+    """GET /api/media/{unknown}/url returns 404 for a missing asset."""
+    resp = await client.get(f"/api/media/{uuid.uuid4()}/url", headers=auth_headers)
+    assert resp.status_code == 404
+
+
+async def test_get_url_asset_without_storage_path_returns_404(
+    client: AsyncClient, auth_headers: dict, _db: tuple
+) -> None:
+    """GET /api/media/{id}/url returns 404 when storage_path is None."""
+    _engine, factory = _db
+    asset_id = uuid.uuid4()
+    async with factory() as session:
+        asset = MediaAsset(
+            id=asset_id,
+            kind="image",
+            storage_path=None,
+            telegram_file_id=None,
+            mime="image/jpeg",
+        )
+        repo = MediaAssetRepository(session)
+        await repo.create(asset)
+        await session.commit()
+
+    resp = await client.get(f"/api/media/{asset_id}/url", headers=auth_headers)
+    assert resp.status_code == 404

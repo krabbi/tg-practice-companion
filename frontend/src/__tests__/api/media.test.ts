@@ -14,7 +14,7 @@ vi.mock('@/router', () => ({
   default: { push: mockRouterPush },
 }))
 
-import { listMediaAssets, deleteMediaAsset, createMotivationalImage, uploadMediaAsset } from '@/api/media'
+import { listMediaAssets, deleteMediaAsset, createMotivationalImage, uploadMediaAsset, getMediaUrl } from '@/api/media'
 
 function stubFetch(status: number, body?: unknown): ReturnType<typeof vi.fn> {
   const mock = vi.fn().mockResolvedValueOnce({
@@ -125,6 +125,19 @@ describe('media API', () => {
       const [url, opts] = mockFetch.mock.calls[0] as [string, RequestInit]
       expect(url).toBe('/api/motivational-images')
       expect(opts.method).toBe('POST')
+    })
+  })
+
+  describe('getMediaUrl', () => {
+    it('calls GET /api/media/{id}/url and returns presigned URL response', async () => {
+      const presigned = { url: 'https://s3.example.com/img.jpg?sig=abc', expires_in: 900 }
+      const mockFetch = stubFetch(200, presigned)
+
+      const result = await getMediaUrl('asset-1')
+
+      expect(result).toEqual(presigned)
+      const [url] = mockFetch.mock.calls[0] as [string]
+      expect(url).toBe('/api/media/asset-1/url')
     })
   })
 
