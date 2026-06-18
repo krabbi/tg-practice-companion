@@ -52,6 +52,16 @@ class Config(BaseSettings):
     # Media storage — path on disk where uploaded audio/images are persisted (B4)
     media_storage_dir: str = "/data/media"
 
+    # S3-compatible object storage (Backblaze B2 / AWS-portable); all optional so the bot
+    # starts without them — gateway is only constructed in web/CLI wiring (S1).
+    s3_endpoint_url: str = ""
+    s3_region: str = ""
+    s3_bucket: str = ""
+    s3_access_key_id: str = ""
+    s3_secret_access_key: str = ""
+    s3_presign_expiry_seconds: int = 900
+    media_max_upload_bytes: int = 10 * 1024 * 1024  # 10 MB
+
     # Web admin Mini App URL (AC-19); empty string disables the /admin command
     web_app_url: str = ""
 
