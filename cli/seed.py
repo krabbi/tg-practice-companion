@@ -76,7 +76,7 @@ def _parse_practice(row: dict, user_id: int) -> tuple[Practice, dict | None]:
     content_type: str = row["content_type"]
     media_dict: dict | None = None
 
-    if content_type in ("audio", "image"):
+    if content_type in ("audio", "image", "video"):
         media_dict = {
             "kind": content_type,
             "telegram_file_id": row.get("telegram_file_id"),

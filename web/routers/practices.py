@@ -19,7 +19,7 @@ from web.dependencies import get_current_user, get_db_session
 router = APIRouter(prefix="/api/practices", tags=["practices"])
 
 _ContentType = Literal[
-    "question", "text", "audio", "image", "want", "good_deeds", "motivational_image"
+    "question", "text", "audio", "image", "video", "want", "good_deeds", "motivational_image"
 ]
 _PeriodicityType = Literal["every_n_hours", "fixed_times"]
 

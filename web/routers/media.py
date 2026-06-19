@@ -78,14 +78,14 @@ def _make_service(
 async def upload_media(
     request: Request,
     file: UploadFile = File(...),  # noqa: B008
-    kind: Literal["audio", "image"] = Form(...),  # noqa: B008
+    kind: Literal["audio", "image", "video"] = Form(...),  # noqa: B008
     service: MediaAdminService = Depends(_make_service),  # noqa: B008
     current_user: dict = Depends(get_current_user),  # noqa: B008
 ) -> object:
-    """Upload an audio or image file; persist to S3 and capture a Telegram file_id."""
+    """Upload an audio, image, or video file; persist to S3 and capture a Telegram file_id."""
     config = request.app.state.config
     max_bytes: int = (
-        config.media_max_audio_bytes if kind == "audio" else config.media_max_image_bytes
+        config.media_max_image_bytes if kind == "image" else config.media_max_audio_bytes
     )
     limit_mb = max_bytes // (1024 * 1024)
     if file.size is not None and file.size > max_bytes:
@@ -94,7 +94,8 @@ async def upload_media(
     if len(data) > max_bytes:
         raise HTTPException(status_code=413, detail=f"File too large (max {limit_mb} MB)")
     filename = file.filename or f"upload.{kind}"
-    mime = file.content_type or ("audio/mpeg" if kind == "audio" else "image/jpeg")
+    _default_mime = {"audio": "audio/mpeg", "image": "image/jpeg", "video": "video/mp4"}
+    mime = file.content_type or _default_mime.get(kind, "application/octet-stream")
     try:
         return await service.upload(data, filename, kind, mime, current_user["id"])
     except MediaAssetError as exc:
@@ -103,7 +104,7 @@ async def upload_media(
 
 @media_router.get("", response_model=list[MediaAssetResponse])
 async def list_media(
-    kind: Literal["audio", "image"] | None = None,
+    kind: Literal["audio", "image", "video"] | None = None,
     service: MediaAdminService = Depends(_make_service),  # noqa: B008
     current_user: dict = Depends(get_current_user),  # noqa: B008
 ) -> list:

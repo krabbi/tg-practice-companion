@@ -83,6 +83,10 @@ class DeliveryService:
             file_id = self._resolve_telegram_file_id(practice)
             await self._bot.send_photo(chat_id=user_id, photo=file_id)
 
+        elif practice.content_type == "video":
+            file_id = self._resolve_telegram_file_id(practice)
+            await self._bot.send_video(chat_id=user_id, video=file_id)
+
         else:
             raise DeliveryError(f"Unknown content_type {practice.content_type!r}")
 
