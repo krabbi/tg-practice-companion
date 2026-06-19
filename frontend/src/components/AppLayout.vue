@@ -37,41 +37,59 @@ const navItems = [
 .layout {
   display: flex;
   flex-direction: column;
-  min-height: 100vh;
+  min-height: 100dvh;
 }
 
 .nav {
   display: flex;
   overflow-x: auto;
-  background-color: var(--tg-theme-secondary-bg-color, #f0f0f0);
-  padding: 0.5rem;
-  padding-top: calc(0.5rem + var(--tg-safe-area-inset-top, env(safe-area-inset-top, 0px)));
-  gap: 0.25rem;
+  position: sticky;
+  top: 0;
+  z-index: var(--z-raised);
+  /* glass: translucent surface + blur, with a 1px edge-refraction highlight */
+  background-color: var(--glass-bg);
+  backdrop-filter: blur(var(--glass-blur));
+  -webkit-backdrop-filter: blur(var(--glass-blur));
+  border-bottom: 1px solid var(--glass-border);
+  box-shadow: var(--glass-inset);
+  padding: var(--space-2);
+  padding-top: calc(var(--space-2) + var(--tg-safe-area-inset-top, env(safe-area-inset-top, 0px)));
+  gap: var(--space-1);
   flex-shrink: 0;
+  /* hide scrollbar but keep scroll functional */
+  scrollbar-width: none;
+}
+
+.nav::-webkit-scrollbar {
+  display: none;
 }
 
 .nav-link {
   text-decoration: none;
-  color: var(--tg-theme-hint-color, #666);
-  padding: 0.5rem 0.75rem;
-  border-radius: 0.5rem;
-  font-size: 0.875rem;
+  color: var(--color-hint);
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-md);
+  font-size: var(--text-sm);
+  font-weight: var(--font-weight-medium);
   white-space: nowrap;
-  transition: background-color 0.15s;
+  transition: background-color var(--transition-fast) ease, color var(--transition-fast) ease;
+  display: flex;
+  align-items: center;
+  min-height: var(--tap-target);
 }
 
 .nav-link:hover {
-  background-color: var(--tg-theme-bg-color, #e0e0e0);
+  background-color: color-mix(in srgb, var(--color-hint) 12%, transparent);
 }
 
 .nav-link.active {
-  color: var(--tg-theme-link-color, #2481cc);
-  font-weight: 600;
-  background-color: var(--tg-theme-bg-color, #ffffff);
+  color: var(--color-accent);
+  font-weight: var(--font-weight-semibold);
+  background-color: var(--color-bg);
 }
 
 .content {
   flex: 1;
-  padding: 1rem;
+  padding: var(--space-4);
 }
 </style>

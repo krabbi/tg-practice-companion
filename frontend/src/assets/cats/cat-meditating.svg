@@ -1,0 +1,55 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" shape-rendering="crispEdges">
+  <!-- Ginger cat meditating: sitting calm, eyes closed -->
+  <!-- Ears -->
+  <rect x="16" y="8" width="8" height="8" fill="#e8853a"/>
+  <rect x="40" y="8" width="8" height="8" fill="#e8853a"/>
+  <rect x="18" y="10" width="4" height="4" fill="#f4a96b"/>
+  <rect x="42" y="10" width="4" height="4" fill="#f4a96b"/>
+  <!-- Head -->
+  <rect x="16" y="16" width="32" height="24" fill="#e8853a"/>
+  <!-- Head sides -->
+  <rect x="12" y="20" width="4" height="16" fill="#e8853a"/>
+  <rect x="48" y="20" width="4" height="16" fill="#e8853a"/>
+  <!-- Face highlight -->
+  <rect x="22" y="18" width="20" height="16" fill="#f0a060"/>
+  <!-- Closed eyes (happy squint lines) -->
+  <rect x="21" y="26" width="8" height="2" fill="#1a1a1a"/>
+  <rect x="35" y="26" width="8" height="2" fill="#1a1a1a"/>
+  <!-- Eye curves - top pixel -->
+  <rect x="21" y="24" width="8" height="2" fill="#1a1a1a"/>
+  <rect x="35" y="24" width="8" height="2" fill="#1a1a1a"/>
+  <!-- Nose -->
+  <rect x="29" y="30" width="6" height="4" fill="#d9742b"/>
+  <rect x="30" y="31" width="4" height="2" fill="#c0622a"/>
+  <!-- Mouth -->
+  <rect x="28" y="34" width="2" height="2" fill="#1a1a1a"/>
+  <rect x="34" y="34" width="2" height="2" fill="#1a1a1a"/>
+  <!-- Whiskers -->
+  <rect x="4" y="28" width="12" height="2" fill="#d0d0d0"/>
+  <rect x="4" y="32" width="10" height="2" fill="#d0d0d0"/>
+  <rect x="48" y="28" width="12" height="2" fill="#d0d0d0"/>
+  <rect x="50" y="32" width="10" height="2" fill="#d0d0d0"/>
+  <!-- Body -->
+  <rect x="16" y="40" width="32" height="16" fill="#e8853a"/>
+  <rect x="12" y="44" width="4" height="12" fill="#e8853a"/>
+  <rect x="48" y="44" width="4" height="12" fill="#e8853a"/>
+  <!-- Body front/belly -->
+  <rect x="22" y="42" width="20" height="12" fill="#f0a060"/>
+  <!-- Sitting legs / paws on knees -->
+  <rect x="12" y="56" width="12" height="4" fill="#e8853a"/>
+  <rect x="40" y="56" width="12" height="4" fill="#e8853a"/>
+  <!-- Paw tips -->
+  <rect x="12" y="56" width="12" height="4" fill="#d9742b"/>
+  <rect x="40" y="56" width="12" height="4" fill="#d9742b"/>
+  <!-- Arms resting on knees -->
+  <rect x="12" y="50" width="8" height="8" fill="#e8853a"/>
+  <rect x="44" y="50" width="8" height="8" fill="#e8853a"/>
+  <!-- Tail -->
+  <rect x="8" y="52" width="4" height="4" fill="#d9742b"/>
+  <rect x="8" y="48" width="4" height="4" fill="#d9742b"/>
+  <rect x="12" y="44" width="4" height="4" fill="#d9742b"/>
+  <!-- Stripes on forehead -->
+  <rect x="28" y="18" width="4" height="2" fill="#d9742b"/>
+  <rect x="26" y="20" width="2" height="2" fill="#d9742b"/>
+  <rect x="36" y="20" width="2" height="2" fill="#d9742b"/>
+</svg>

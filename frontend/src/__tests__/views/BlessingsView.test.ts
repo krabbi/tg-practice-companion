@@ -75,7 +75,8 @@ describe('BlessingsView', () => {
     const wrapper = mount(BlessingsView)
     await flushPromises()
 
-    await wrapper.find('button.btn-primary').trigger('click')
+    const addBtn = wrapper.findAll('button').find((b) => b.text().includes('Добавить'))
+    await addBtn!.trigger('click')
 
     expect(wrapper.text()).toContain('Новое напутствие')
     expect(wrapper.find('textarea').exists()).toBe(true)
@@ -86,7 +87,8 @@ describe('BlessingsView', () => {
     const wrapper = mount(BlessingsView)
     await flushPromises()
 
-    await wrapper.find('button.btn-primary').trigger('click')
+    const addBtn = wrapper.findAll('button').find((b) => b.text().includes('Добавить'))
+    await addBtn!.trigger('click')
     await wrapper.find('form').trigger('submit')
 
     expect(wrapper.text()).toContain('Текст обязателен')
@@ -97,10 +99,11 @@ describe('BlessingsView', () => {
     const wrapper = mount(BlessingsView)
     await flushPromises()
 
-    const orderBtns = wrapper.findAll('button.btn-order')
-    expect(orderBtns.length).toBe(4)
-    expect((orderBtns[0].element as HTMLButtonElement).disabled).toBe(true)
-    expect((orderBtns[3].element as HTMLButtonElement).disabled).toBe(true)
+    // btn-order buttons appear in both table and card list — find those in the table
+    const tableOrderBtns = wrapper.find('table').findAll('button.btn-order')
+    expect(tableOrderBtns.length).toBe(4)
+    expect((tableOrderBtns[0].element as HTMLButtonElement).disabled).toBe(true)
+    expect((tableOrderBtns[3].element as HTMLButtonElement).disabled).toBe(true)
   })
 
   it('shows inactive row style for inactive blessing', async () => {

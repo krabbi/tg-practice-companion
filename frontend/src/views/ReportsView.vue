@@ -2,6 +2,8 @@
 import { ref } from 'vue'
 import { ApiError } from '@/api/client'
 import { getPeriodReport, type PeriodReport } from '@/api/reports'
+import Button from '@/components/ui/Button.vue'
+import Field from '@/components/ui/Field.vue'
 
 const dateFrom = ref('')
 const dateTo = ref('')
@@ -48,158 +50,178 @@ function leadsPercent(r: PeriodReport): string {
 </script>
 
 <template>
-  <div class="view">
-    <h2>Отчёты</h2>
+  <section class="view">
+    <h2 class="view-title">Отчёты</h2>
 
     <form class="report-form" @submit.prevent="fetchReport">
-      <div class="field">
-        <label>Дата начала *</label>
+      <Field label="Дата начала *" :error="formErrors.dateFrom">
         <input v-model="dateFrom" type="date" />
-        <span v-if="formErrors.dateFrom" class="field-error">{{ formErrors.dateFrom }}</span>
-      </div>
-      <div class="field">
-        <label>Дата окончания *</label>
+      </Field>
+      <Field label="Дата окончания *" :error="formErrors.dateTo">
         <input v-model="dateTo" type="date" />
-        <span v-if="formErrors.dateTo" class="field-error">{{ formErrors.dateTo }}</span>
-      </div>
-      <button type="submit" class="btn btn-primary" :disabled="loading">
+      </Field>
+      <Button type="submit" variant="primary" :disabled="loading">
         {{ loading ? 'Загрузка...' : 'Показать отчёт' }}
-      </button>
+      </Button>
     </form>
 
     <p v-if="error" class="error-msg">{{ error }}</p>
 
     <div v-if="report" class="report-results">
-      <h3>Период: {{ report.date_from }} — {{ report.date_to }}</h3>
+      <h3 class="report-period">Период: {{ report.date_from }} — {{ report.date_to }}</h3>
 
-      <table class="report-table">
-        <thead>
-          <tr>
-            <th>Показатель</th>
-            <th>Значение</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr>
-            <td>Всего записей в дневнике</td>
-            <td>{{ report.n_total }}</td>
-          </tr>
-          <tr>
-            <td>Мыслей, ведущих к целям</td>
-            <td>{{ report.n_leads }} ({{ leadsPercent(report) }})</td>
-          </tr>
-          <tr>
-            <td>Практик отправлено</td>
-            <td>{{ report.n_practices }}</td>
-          </tr>
-          <tr>
-            <td>Добрых дел</td>
-            <td>{{ report.n_good_deeds }}</td>
-          </tr>
-        </tbody>
-      </table>
+      <!-- Stats cards (mobile) -->
+      <div class="stats-cards">
+        <div class="stat-card">
+          <span class="stat-value">{{ report.n_total }}</span>
+          <span class="stat-label">Всего записей в дневнике</span>
+        </div>
+        <div class="stat-card">
+          <span class="stat-value">{{ report.n_leads }} <small>({{ leadsPercent(report) }})</small></span>
+          <span class="stat-label">Мыслей, ведущих к целям</span>
+        </div>
+        <div class="stat-card">
+          <span class="stat-value">{{ report.n_practices }}</span>
+          <span class="stat-label">Практик отправлено</span>
+        </div>
+        <div class="stat-card">
+          <span class="stat-value">{{ report.n_good_deeds }}</span>
+          <span class="stat-label">Добрых дел</span>
+        </div>
+      </div>
+
+      <!-- Table (wide screens) -->
+      <div class="table-wrap">
+        <table class="report-table">
+          <thead>
+            <tr>
+              <th>Показатель</th>
+              <th>Значение</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Всего записей в дневнике</td>
+              <td>{{ report.n_total }}</td>
+            </tr>
+            <tr>
+              <td>Мыслей, ведущих к целям</td>
+              <td>{{ report.n_leads }} ({{ leadsPercent(report) }})</td>
+            </tr>
+            <tr>
+              <td>Практик отправлено</td>
+              <td>{{ report.n_practices }}</td>
+            </tr>
+            <tr>
+              <td>Добрых дел</td>
+              <td>{{ report.n_good_deeds }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
     </div>
-  </div>
+  </section>
 </template>
 
 <style scoped>
-h2 {
-  margin-bottom: 1rem;
-}
-
-h3 {
-  margin: 1.25rem 0 0.75rem;
-  font-size: 0.95rem;
-  color: var(--tg-theme-hint-color, #555);
+.view-title {
+  font-size: var(--text-lg);
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: -0.02em;
+  margin-bottom: var(--space-4);
 }
 
 .error-msg {
-  color: #c0392b;
-  background: #fdecea;
-  border-radius: 4px;
-  padding: 0.5rem 0.75rem;
-  margin-top: 0.75rem;
-  font-size: 0.875rem;
+  color: var(--color-danger);
+  background: var(--color-danger-bg);
+  border-radius: var(--radius-md);
+  padding: var(--space-2) var(--space-3);
+  margin-top: var(--space-3);
+  font-size: var(--text-sm);
 }
 
 .report-form {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.75rem;
+  gap: var(--space-3);
   align-items: flex-end;
-  padding: 0.75rem;
-  background: var(--tg-theme-secondary-bg-color, #f5f5f5);
-  border-radius: 8px;
+  padding: var(--space-4);
+  background: var(--color-surface);
+  border-radius: var(--radius-lg);
 }
 
-.field {
+.report-results { margin-top: var(--space-5); }
+
+.report-period {
+  font-size: var(--text-sm);
+  color: var(--color-hint);
+  margin-bottom: var(--space-4);
+  font-weight: var(--font-weight-medium);
+}
+
+/* Stats cards — always shown, extra on mobile */
+.stats-cards {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-3);
+  margin-bottom: var(--space-4);
+}
+
+@media (min-width: 481px) {
+  .stats-cards { display: none; }
+}
+
+.stat-card {
+  background: var(--color-surface);
+  border-radius: var(--radius-lg);
+  padding: var(--space-4);
   display: flex;
   flex-direction: column;
-  gap: 0.25rem;
-  min-width: 150px;
+  gap: var(--space-1);
 }
 
-.field label {
-  font-size: 0.8rem;
-  font-weight: 500;
-  color: var(--tg-theme-hint-color, #666);
+.stat-value {
+  font-size: var(--text-xl);
+  font-weight: var(--font-weight-bold);
+  font-variant-numeric: tabular-nums;
+  color: var(--color-text);
 }
 
-.field input {
-  border: 1px solid var(--tg-theme-hint-color, #ccc);
-  border-radius: 6px;
-  padding: 0.4rem 0.5rem;
-  font-size: 0.875rem;
-  background: var(--tg-theme-bg-color, #fff);
-  color: var(--tg-theme-text-color, #000);
-  box-sizing: border-box;
+.stat-value small {
+  font-size: var(--text-sm);
+  font-weight: var(--font-weight-regular);
+  color: var(--color-hint);
 }
 
-.field-error {
-  color: #c0392b;
-  font-size: 0.78rem;
+.stat-label {
+  font-size: var(--text-xs);
+  color: var(--color-hint);
+  line-height: var(--leading-normal);
 }
 
-.btn {
-  border: none;
-  border-radius: 6px;
-  padding: 0.5rem 1rem;
-  cursor: pointer;
-  font-size: 0.875rem;
-  font-weight: 500;
-  transition: opacity 0.15s;
-  align-self: flex-end;
-}
-
-.btn:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-
-.btn-primary {
-  background: var(--tg-theme-button-color, #2481cc);
-  color: var(--tg-theme-button-text-color, #fff);
-}
-
-.report-results {
-  margin-top: 1rem;
-}
-
+/* Table */
 .report-table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 0.875rem;
+  font-size: var(--text-sm);
 }
 
 .report-table th,
 .report-table td {
   text-align: left;
-  padding: 0.5rem 0.75rem;
-  border-bottom: 1px solid var(--tg-theme-hint-color, #ddd);
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid color-mix(in srgb, var(--color-hint) 20%, transparent);
 }
 
 .report-table th {
-  font-weight: 600;
-  background: var(--tg-theme-secondary-bg-color, #f5f5f5);
+  font-weight: var(--font-weight-semibold);
+  background: var(--color-surface);
+  color: var(--color-hint);
+  font-size: var(--text-xs);
+}
+
+.report-table td:last-child {
+  font-variant-numeric: tabular-nums;
+  font-weight: var(--font-weight-medium);
 }
 </style>

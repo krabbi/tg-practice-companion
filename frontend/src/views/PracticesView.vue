@@ -10,6 +10,12 @@ import {
   type ContentType,
   type PeriodicityType,
 } from '@/api/practices'
+import Card from '@/components/ui/Card.vue'
+import Badge from '@/components/ui/Badge.vue'
+import Button from '@/components/ui/Button.vue'
+import Field from '@/components/ui/Field.vue'
+import EmptyState from '@/components/ui/EmptyState.vue'
+import Spinner from '@/components/ui/Spinner.vue'
 
 const CONTENT_TYPES: { value: ContentType; label: string }[] = [
   { value: 'question', label: 'Вопрос' },
@@ -72,6 +78,10 @@ const submitting = ref(false)
 
 const showContentField = computed(() => TEXT_CONTENT_TYPES.includes(formData.content_type))
 const showMediaField = computed(() => MEDIA_CONTENT_TYPES.includes(formData.content_type))
+
+function contentTypeLabel(ct: ContentType): string {
+  return CONTENT_TYPES.find((c) => c.value === ct)?.label ?? ct
+}
 
 function cadenceSummary(p: Practice): string {
   if (p.periodicity_type === 'every_n_hours') {
@@ -245,19 +255,53 @@ onMounted(loadPractices)
 </script>
 
 <template>
-  <div class="view">
-    <div class="view-header">
-      <h2>Практики</h2>
-      <button class="btn btn-primary" @click="openCreate">+ Добавить</button>
-    </div>
+  <section class="view">
+    <header class="view-header">
+      <h2 class="view-title">Практики</h2>
+      <Button variant="primary" size="sm" @click="openCreate">+ Добавить</Button>
+    </header>
 
     <p v-if="listError" class="error-msg">{{ listError }}</p>
-    <p v-if="loading" class="hint">Загрузка...</p>
 
-    <div v-if="!loading && practices.length === 0 && !listError" class="hint">
-      Практики не найдены. Создайте первую.
+    <Spinner v-if="loading" pose="meditating" label="Загрузка практик…" />
+
+    <EmptyState
+      v-else-if="!loading && practices.length === 0 && !listError"
+      pose="lounging"
+      label="Практики не найдены. Создайте первую."
+    />
+
+    <!-- Card list (mobile) -->
+    <div v-if="practices.length > 0" class="card-list">
+      <Card
+        v-for="p in practices"
+        :key="p.id"
+        :class="{ 'card--inactive': !p.active }"
+      >
+        <div class="card-main">
+          <span class="card-name">{{ p.name }}</span>
+          <Badge :variant="p.active ? 'active' : 'inactive'">
+            {{ p.active ? 'Активна' : 'Неактивна' }}
+          </Badge>
+        </div>
+        <div class="card-meta">
+          <Badge variant="info">{{ contentTypeLabel(p.content_type) }}</Badge>
+          <span class="card-hint">{{ cadenceSummary(p) }}</span>
+          <span class="card-hint">Порядок: {{ p.sort_order }}</span>
+        </div>
+        <div class="card-actions">
+          <Button
+            :variant="p.active ? 'secondary' : 'ghost'"
+            size="sm"
+            @click="toggleActive(p)"
+          >{{ p.active ? 'Выкл' : 'Вкл' }}</Button>
+          <Button variant="secondary" size="sm" @click="openEdit(p)">Изменить</Button>
+          <Button variant="danger" size="sm" @click="remove(p)">Удалить</Button>
+        </div>
+      </Card>
     </div>
 
+    <!-- Table (wide screens) -->
     <div v-if="practices.length > 0" class="table-wrap">
       <table class="practices-table">
         <thead>
@@ -305,63 +349,50 @@ onMounted(loadPractices)
         <form class="practice-form" @submit.prevent="submitForm">
           <p v-if="formError" class="error-msg">{{ formError }}</p>
 
-          <div class="field">
-            <label>Название *</label>
+          <Field label="Название *" :error="formErrors['name']">
             <input v-model="formData.name" type="text" maxlength="120" />
-            <span v-if="formErrors['name']" class="field-error">{{ formErrors['name'] }}</span>
-          </div>
+          </Field>
 
-          <div class="field">
-            <label>Тип контента *</label>
+          <Field label="Тип контента *">
             <select v-model="formData.content_type">
               <option v-for="ct in CONTENT_TYPES" :key="ct.value" :value="ct.value">
                 {{ ct.label }}
               </option>
             </select>
-          </div>
+          </Field>
 
-          <div v-if="showContentField" class="field">
-            <label>Содержимое *</label>
+          <Field v-if="showContentField" label="Содержимое *" :error="formErrors['content']">
             <textarea v-model="formData.content" rows="3"></textarea>
-            <span v-if="formErrors['content']" class="field-error">{{ formErrors['content'] }}</span>
-          </div>
+          </Field>
 
-          <div v-if="showMediaField" class="field">
-            <label>UUID медиафайла</label>
+          <Field v-if="showMediaField" label="UUID медиафайла">
             <input v-model="formData.media_asset_id" type="text" placeholder="UUID из раздела Медиа" />
-          </div>
+          </Field>
 
-          <div class="field">
-            <label>Тип расписания *</label>
+          <Field label="Тип расписания *">
             <select v-model="formData.periodicity_type">
               <option value="every_n_hours">Каждые N часов</option>
               <option value="fixed_times">Фиксированное время</option>
             </select>
-          </div>
+          </Field>
 
           <template v-if="formData.periodicity_type === 'every_n_hours'">
-            <div class="field">
-              <label>Интервал (часов) *</label>
+            <Field label="Интервал (часов) *" :error="formErrors['interval_hours']">
               <input v-model.number="formData.interval_hours" type="number" min="1" />
-              <span v-if="formErrors['interval_hours']" class="field-error">
-                {{ formErrors['interval_hours'] }}
-              </span>
-            </div>
+            </Field>
             <div class="field-row">
-              <div class="field">
-                <label>Якорный час (0–23)</label>
+              <Field label="Якорный час (0–23)">
                 <input v-model.number="formData.anchor_hour" type="number" min="0" max="23" />
-              </div>
-              <div class="field">
-                <label>Якорные минуты (0–59)</label>
+              </Field>
+              <Field label="Якорные минуты (0–59)">
                 <input v-model.number="formData.anchor_minute" type="number" min="0" max="59" />
-              </div>
+              </Field>
             </div>
           </template>
 
           <template v-else>
             <div class="field">
-              <label>Время отправки (ЧЧ:ММ)</label>
+              <label class="field-label">Время отправки (ЧЧ:ММ)</label>
               <div class="times-list">
                 <span v-for="t in formData.schedule_times" :key="t" class="time-chip">
                   {{ t }}
@@ -394,31 +425,28 @@ onMounted(loadPractices)
           </div>
 
           <div class="field-row">
-            <div class="field">
-              <label>Дата начала</label>
+            <Field label="Дата начала">
               <input v-model="formData.start_date" type="date" />
-            </div>
-            <div class="field">
-              <label>Дата окончания</label>
+            </Field>
+            <Field label="Дата окончания">
               <input v-model="formData.end_date" type="date" />
-            </div>
+            </Field>
           </div>
 
-          <div class="field">
-            <label>Порядок сортировки</label>
+          <Field label="Порядок сортировки">
             <input v-model.number="formData.sort_order" type="number" />
-          </div>
+          </Field>
 
           <div class="form-actions">
-            <button type="button" class="btn btn-secondary" @click="closeForm">Отмена</button>
-            <button type="submit" class="btn btn-primary" :disabled="submitting">
+            <Button type="button" variant="secondary" @click="closeForm">Отмена</Button>
+            <Button type="submit" variant="primary" :disabled="submitting">
               {{ submitting ? 'Сохранение...' : editingId ? 'Сохранить' : 'Создать' }}
-            </button>
+            </Button>
           </div>
         </form>
       </div>
     </div>
-  </div>
+  </section>
 </template>
 
 <style scoped>
@@ -426,49 +454,103 @@ onMounted(loadPractices)
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 1rem;
+  margin-bottom: var(--space-4);
 }
 
-.view-header h2 {
-  margin: 0;
-}
-
-.hint {
-  color: var(--tg-theme-hint-color, #888);
-  font-size: 0.9rem;
-  margin: 1rem 0;
+.view-title {
+  font-size: var(--text-lg);
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: -0.02em;
 }
 
 .error-msg {
-  color: #c0392b;
-  background: #fdecea;
-  border-radius: 4px;
-  padding: 0.5rem 0.75rem;
-  margin-bottom: 0.75rem;
-  font-size: 0.875rem;
+  color: var(--color-danger);
+  background: var(--color-danger-bg);
+  border-radius: var(--radius-md);
+  padding: var(--space-2) var(--space-3);
+  margin-bottom: var(--space-3);
+  font-size: var(--text-sm);
 }
 
+/* Card list — shown on mobile */
+.card-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.card--inactive {
+  opacity: 0.6;
+}
+
+.card-main {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.card-name {
+  font-weight: var(--font-weight-semibold);
+  font-size: var(--text-base);
+  flex: 1;
+}
+
+.card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  align-items: center;
+}
+
+.card-hint {
+  font-size: var(--text-xs);
+  color: var(--color-hint);
+}
+
+.card-actions {
+  display: flex;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  padding-top: var(--space-2);
+  border-top: 1px solid color-mix(in srgb, var(--color-hint) 15%, transparent);
+}
+
+/* Table — hidden on narrow screens */
 .table-wrap {
+  display: none;
   overflow-x: auto;
+}
+
+@media (min-width: 481px) {
+  .card-list {
+    display: none;
+  }
+  .table-wrap {
+    display: block;
+  }
 }
 
 .practices-table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 0.875rem;
+  font-size: var(--text-sm);
 }
 
 .practices-table th,
 .practices-table td {
   text-align: left;
-  padding: 0.5rem 0.75rem;
-  border-bottom: 1px solid var(--tg-theme-hint-color, #ddd);
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid color-mix(in srgb, var(--color-hint) 20%, transparent);
   vertical-align: middle;
 }
 
 .practices-table th {
-  font-weight: 600;
-  background: var(--tg-theme-secondary-bg-color, #f5f5f5);
+  font-weight: var(--font-weight-semibold);
+  background: var(--color-surface);
+  color: var(--color-hint);
+  font-size: var(--text-xs);
+  letter-spacing: 0.02em;
 }
 
 .practices-table tr.inactive {
@@ -484,204 +566,186 @@ onMounted(loadPractices)
 
 .actions {
   display: flex;
-  gap: 0.4rem;
+  gap: var(--space-1);
   white-space: nowrap;
 }
 
 .btn {
   border: none;
-  border-radius: 6px;
-  padding: 0.5rem 1rem;
+  border-radius: var(--radius-md);
+  padding: 0 var(--space-3);
+  min-height: var(--tap-target);
   cursor: pointer;
-  font-size: 0.875rem;
-  font-weight: 500;
-  transition: opacity 0.15s;
+  font-size: var(--text-sm);
+  font-weight: var(--font-weight-medium);
+  transition: opacity var(--transition-fast);
+  font-family: var(--font-family);
 }
 
-.btn:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
+.btn:disabled { opacity: 0.6; cursor: not-allowed; }
 
 .btn-sm {
-  padding: 0.25rem 0.6rem;
-  font-size: 0.8rem;
+  min-height: var(--tap-target);
+  padding: 0 var(--space-2);
+  font-size: var(--text-xs);
 }
 
-.btn-primary {
-  background: var(--tg-theme-button-color, #2481cc);
-  color: var(--tg-theme-button-text-color, #fff);
-}
-
-.btn-secondary {
-  background: var(--tg-theme-secondary-bg-color, #e0e0e0);
-  color: var(--tg-theme-text-color, #333);
-}
-
-.btn-danger {
-  background: #e74c3c;
-  color: #fff;
-}
-
-.btn-active {
-  background: #27ae60;
-  color: #fff;
-}
-
-.btn-inactive {
-  background: #bdc3c7;
-  color: #333;
-}
+.btn-primary { background: var(--color-accent); color: var(--color-accent-text); }
+.btn-secondary { background: var(--color-surface); color: var(--color-text); }
+.btn-danger { background: var(--color-danger); color: #fff; }
+.btn-active { background: var(--color-success); color: #fff; }
+.btn-inactive { background: var(--color-inactive-bg); color: var(--color-inactive-text); }
 
 .btn-close {
   background: none;
   border: none;
-  font-size: 1.1rem;
+  font-size: var(--text-md);
   cursor: pointer;
-  color: var(--tg-theme-hint-color, #888);
-  padding: 0.25rem;
+  color: var(--color-hint);
+  padding: var(--space-1);
   line-height: 1;
+  min-height: var(--tap-target);
+  min-width: var(--tap-target);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 /* Modal */
 .modal-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.45);
+  background: rgba(15, 15, 15, 0.45);
   display: flex;
   align-items: flex-start;
   justify-content: center;
-  padding: 1rem;
+  padding: var(--space-4);
   overflow-y: auto;
-  z-index: 100;
+  z-index: var(--z-modal);
 }
 
 .modal {
-  background: var(--tg-theme-bg-color, #fff);
-  border-radius: 12px;
+  background: var(--color-bg);
+  border-radius: var(--radius-lg);
   width: 100%;
   max-width: 520px;
-  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.18);
-  margin-top: 0.5rem;
+  box-shadow: var(--shadow-lg);
+  margin-top: var(--space-2);
 }
 
 .modal-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 1rem 1.25rem 0.75rem;
-  border-bottom: 1px solid var(--tg-theme-hint-color, #ddd);
+  padding: var(--space-4) var(--space-4) var(--space-3);
+  border-bottom: 1px solid color-mix(in srgb, var(--color-hint) 20%, transparent);
 }
 
 .modal-header h3 {
   margin: 0;
-  font-size: 1rem;
+  font-size: var(--text-md);
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: -0.01em;
 }
 
-/* Form */
 .practice-form {
-  padding: 1rem 1.25rem 1.25rem;
+  padding: var(--space-4);
   display: flex;
   flex-direction: column;
-  gap: 0.75rem;
+  gap: var(--space-3);
 }
 
 .field {
   display: flex;
   flex-direction: column;
-  gap: 0.25rem;
+  gap: var(--space-1);
 }
 
-.field label {
-  font-size: 0.8rem;
-  font-weight: 500;
-  color: var(--tg-theme-hint-color, #666);
+.field-label {
+  font-size: var(--text-sm);
+  font-weight: var(--font-weight-medium);
+  color: var(--color-hint);
 }
 
 .field input,
 .field select,
 .field textarea {
-  border: 1px solid var(--tg-theme-hint-color, #ccc);
-  border-radius: 6px;
-  padding: 0.5rem 0.6rem;
-  font-size: 0.875rem;
-  background: var(--tg-theme-secondary-bg-color, #fafafa);
-  color: var(--tg-theme-text-color, #000);
+  border: 1px solid color-mix(in srgb, var(--color-hint) 40%, transparent);
+  border-radius: var(--radius-md);
+  padding: var(--space-2) var(--space-3);
+  font-size: var(--text-base);
+  background: var(--color-surface);
+  color: var(--color-text);
   width: 100%;
   box-sizing: border-box;
+  font-family: var(--font-family);
+  min-height: var(--tap-target);
 }
 
-.field textarea {
-  resize: vertical;
-}
+.field textarea { resize: vertical; min-height: unset; }
 
 .field-error {
-  color: #c0392b;
-  font-size: 0.78rem;
+  color: var(--color-danger);
+  font-size: var(--text-xs);
 }
 
 .field-row {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 0.75rem;
+  gap: var(--space-3);
 }
 
 .checkbox-field label {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: var(--space-2);
   cursor: pointer;
-  color: var(--tg-theme-text-color, #000);
-  font-size: 0.875rem;
-  font-weight: 400;
+  color: var(--color-text);
+  font-size: var(--text-base);
+  min-height: var(--tap-target);
 }
 
-.checkbox-field input[type='checkbox'] {
-  width: auto;
-}
+.checkbox-field input[type='checkbox'] { width: auto; }
 
 .times-list {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.4rem;
+  gap: var(--space-1);
   min-height: 1.5rem;
 }
 
 .time-chip {
   display: inline-flex;
   align-items: center;
-  gap: 0.3rem;
-  background: var(--tg-theme-secondary-bg-color, #e8f4fd);
-  border-radius: 4px;
-  padding: 0.2rem 0.5rem;
-  font-size: 0.8rem;
+  gap: var(--space-1);
+  background: var(--color-surface);
+  border-radius: var(--radius-sm);
+  padding: var(--space-1) var(--space-2);
+  font-size: var(--text-sm);
 }
 
 .chip-remove {
   background: none;
   border: none;
   cursor: pointer;
-  font-size: 0.7rem;
+  font-size: var(--text-xs);
   padding: 0;
-  color: var(--tg-theme-hint-color, #888);
+  color: var(--color-hint);
   line-height: 1;
 }
 
 .time-add {
   display: flex;
-  gap: 0.5rem;
+  gap: var(--space-2);
   align-items: center;
 }
 
-.time-add input {
-  width: 90px;
-  flex-shrink: 0;
-}
+.time-add input { width: 90px; flex-shrink: 0; }
 
 .form-actions {
   display: flex;
   justify-content: flex-end;
-  gap: 0.75rem;
-  padding-top: 0.5rem;
+  gap: var(--space-3);
+  padding-top: var(--space-2);
 }
 </style>
