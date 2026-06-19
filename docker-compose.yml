@@ -79,6 +79,7 @@ services:
       S3_PRESIGN_EXPIRY_SECONDS: ${S3_PRESIGN_EXPIRY_SECONDS:-900}
       MEDIA_MAX_IMAGE_BYTES: ${MEDIA_MAX_IMAGE_BYTES:-10485760}
       MEDIA_MAX_AUDIO_BYTES: ${MEDIA_MAX_AUDIO_BYTES:-52428800}
+      MEDIA_MAX_VIDEO_BYTES: ${MEDIA_MAX_VIDEO_BYTES:-262144000}
 
   nginx:
     image: nginx:alpine
@@ -90,10 +91,10 @@ services:
       - "${NGINX_PORT:-4100}:80"
     environment:
       # Shared with the web service; nginx must allow the largest per-kind cap
-      # (audio). Injected into the config via the image's envsubst templating.
-      MEDIA_MAX_AUDIO_BYTES: ${MEDIA_MAX_AUDIO_BYTES:-52428800}
+      # (video). Injected into the config via the image's envsubst templating.
+      MEDIA_MAX_VIDEO_BYTES: ${MEDIA_MAX_VIDEO_BYTES:-262144000}
       # Only substitute our var — leave nginx's own $host/$remote_addr untouched.
-      NGINX_ENVSUBST_FILTER: "MEDIA_MAX_AUDIO_BYTES"
+      NGINX_ENVSUBST_FILTER: "MEDIA_MAX_VIDEO_BYTES"
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/templates/default.conf.template:ro
       - ./frontend/dist:/usr/share/nginx/html:ro

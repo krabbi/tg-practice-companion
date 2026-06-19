@@ -57,11 +57,13 @@ class Config(BaseSettings):
     s3_access_key_id: str = ""
     s3_secret_access_key: str = ""
     s3_presign_expiry_seconds: int = 900
-    # Per-kind upload caps; nginx must allow at least the larger one (audio).
+    # Per-kind upload caps; nginx must allow at least the largest one (video).
     # Audio is capped at Telegram's 50 MB bot-send limit so every uploaded file
     # is deliverable by the bot (delivery_service sends it via Telegram file_id).
+    # Video is stored in S3 only (no Telegram bot-send) so the cap is 250 MB.
     media_max_image_bytes: int = 10 * 1024 * 1024  # 10 MB
     media_max_audio_bytes: int = 50 * 1024 * 1024  # 50 MB (Telegram bot-send cap)
+    media_max_video_bytes: int = 250 * 1024 * 1024  # 250 MB
 
     # Web admin Mini App URL (AC-19); empty string disables the /admin command
     web_app_url: str = ""

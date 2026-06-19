@@ -27,15 +27,17 @@ _BASE_CONFIG = {
     "cors_origins": [],
     "send_window_start": 6,
     "send_window_end": 22,
+    "media_max_video_bytes": 262144000,
 }
 
 ALLOWED_USER_ID = 123456789
 _FAKE_PHOTO_FILE_ID = "AgACAgIAAxkBAAIBfGXfake_photo_file_id"
 _FAKE_AUDIO_FILE_ID = "BQACAgIAAxkBAAIBfGXfake_audio_file_id"
+_FAKE_VIDEO_FILE_ID = "CQACAgIAAxkBAAIBfGXfake_video_file_id"
 
 
 def _make_mock_bot() -> MagicMock:
-    """Return a mock Bot that captures file_ids for image and audio uploads."""
+    """Return a mock Bot that captures file_ids for image, audio, and video uploads."""
     bot = MagicMock()
     photo_variant = MagicMock()
     photo_variant.file_id = _FAKE_PHOTO_FILE_ID
@@ -48,6 +50,12 @@ def _make_mock_bot() -> MagicMock:
     audio_msg = MagicMock()
     audio_msg.audio = audio_obj
     bot.send_audio = AsyncMock(return_value=audio_msg)
+
+    video_obj = MagicMock()
+    video_obj.file_id = _FAKE_VIDEO_FILE_ID
+    video_msg = MagicMock()
+    video_msg.video = video_obj
+    bot.send_video = AsyncMock(return_value=video_msg)
 
     # Allow the lifespan to close the bot's session without error
     bot.session = MagicMock()
@@ -224,6 +232,65 @@ async def test_upload_audio_over_image_limit_passes(
         "/api/media", data={"kind": "audio"}, files=files, headers=auth_headers
     )
     assert resp.status_code == 201
+
+
+# ---------------------------------------------------------------------------
+# Video upload round-trip
+# ---------------------------------------------------------------------------
+
+
+async def test_upload_video_creates_asset_with_s3_key(
+    client: AsyncClient, auth_headers: dict
+) -> None:
+    """Upload a video file → row has telegram_file_id populated, storage_path is an S3 key."""
+    fake_video = b"\x00\x00\x00\x18ftypmp42" + b"\x00" * 100
+    files = {"file": ("clip.mp4", io.BytesIO(fake_video), "video/mp4")}
+    data = {"kind": "video"}
+
+    resp = await client.post("/api/media", data=data, files=files, headers=auth_headers)
+
+    assert resp.status_code == 201
+    body = resp.json()
+    assert body["kind"] == "video"
+    assert body["mime"] == "video/mp4"
+    assert body["telegram_file_id"] == _FAKE_VIDEO_FILE_ID
+    assert body["storage_path"] is not None
+    assert body["storage_path"].startswith("video/")
+    assert body["storage_path"].endswith(".mp4")
+    assert body["id"] is not None
+
+
+async def test_upload_video_above_audio_limit_passes(
+    client: AsyncClient, auth_headers: dict
+) -> None:
+    """Video above the 50 MB audio cap is accepted (video cap is 250 MB)."""
+    data_bytes = b"x" * (50 * 1024 * 1024 + 1)
+    files = {"file": ("big.mp4", io.BytesIO(data_bytes), "video/mp4")}
+    resp = await client.post(
+        "/api/media", data={"kind": "video"}, files=files, headers=auth_headers
+    )
+    assert resp.status_code == 201
+
+
+async def test_upload_video_over_250mb_returns_413(client: AsyncClient, auth_headers: dict) -> None:
+    """Upload of a 250 MB + 1 byte video is rejected with 413."""
+    data_bytes = b"x" * (250 * 1024 * 1024 + 1)
+    files = {"file": ("toobig.mp4", io.BytesIO(data_bytes), "video/mp4")}
+    resp = await client.post(
+        "/api/media", data={"kind": "video"}, files=files, headers=auth_headers
+    )
+    assert resp.status_code == 413
+    assert "250 MB" in resp.json()["detail"]
+
+
+async def test_upload_video_wrong_mime_returns_422(client: AsyncClient, auth_headers: dict) -> None:
+    """Upload with a non-video MIME type for kind=video is rejected with 422."""
+    files = {"file": ("trick.mp4", io.BytesIO(b"fake"), "application/octet-stream")}
+    resp = await client.post(
+        "/api/media", data={"kind": "video"}, files=files, headers=auth_headers
+    )
+    assert resp.status_code == 422
+    assert "video/" in resp.json()["detail"]
 
 
 # ---------------------------------------------------------------------------
