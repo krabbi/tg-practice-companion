@@ -141,16 +141,22 @@ jobs:
           PR_NUMBER="${{ github.event.pull_request.number }}"
           sleep 5
 
+          # Collect verdict text from BOTH channels: issue comments (gh pr view --json
+          # comments) and PR reviews (pulls/{n}/reviews). The agent may post its verdict
+          # via either channel depending on which tool it picks; reading only one channel
+          # causes the "no verdict" false-negative that strands PRs in needs-human.
           COMMENTS=$(gh pr view "${PR_NUMBER}" --json comments --jq '.comments[].body' 2>/dev/null || true)
+          REVIEWS=$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}/reviews" --jq '.[].body' 2>/dev/null || true)
+          HAYSTACK="${COMMENTS}"$'\n'"${REVIEWS}"
 
-          if echo "$COMMENTS" | grep -q '<!-- autobot:product-review-verdict:APPROVED -->'; then
+          if echo "$HAYSTACK" | grep -q '<!-- autobot:product-review-verdict:APPROVED -->'; then
             echo "Product verdict: APPROVED"
             gh pr edit "${PR_NUMBER}" --add-label "product-approved"
-          elif echo "$COMMENTS" | grep -q '<!-- autobot:product-review-verdict:CHANGES_REQUESTED -->'; then
+          elif echo "$HAYSTACK" | grep -q '<!-- autobot:product-review-verdict:CHANGES_REQUESTED -->'; then
             echo "Product verdict: CHANGES_REQUESTED"
             gh pr edit "${PR_NUMBER}" --add-label "product-changes-requested"
           else
-            gh pr comment "${PR_NUMBER}" --body "[AUTOBOT ERROR] The product-manager agent ran but posted no verdict comment. Manual intervention required."
+            gh pr comment "${PR_NUMBER}" --body "[AUTOBOT ERROR] The product-manager agent ran but posted no verdict comment (checked both issue comments and PR reviews). Manual intervention required."
             gh pr edit "${PR_NUMBER}" --add-label "needs-human"
             exit 1
           fi
