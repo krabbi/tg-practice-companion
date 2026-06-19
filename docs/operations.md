@@ -568,15 +568,21 @@ S3_BUCKET=my-practice-media                               # bucket name from ste
 S3_ACCESS_KEY_ID=your-application-key-id                  # keyID from step 2
 S3_SECRET_ACCESS_KEY=your-application-key                 # applicationKey from step 2
 S3_PRESIGN_EXPIRY_SECONDS=900                             # optional; default 900 (15 min)
-MEDIA_MAX_UPLOAD_BYTES=10485760                           # optional; default 10 MB
+MEDIA_MAX_IMAGE_BYTES=10485760                            # optional; default 10 MB
+MEDIA_MAX_AUDIO_BYTES=52428800                            # optional; default 50 MB (Telegram cap)
 ```
 
 ### 5. Notes
 
 - **SigV4 only.** Backblaze B2 accepts only AWS Signature Version 4 — boto3 (used by the
   service) sends SigV4 by default, so no special configuration is needed.
-- **10 MB upload limit** is enforced at the API layer (`MEDIA_MAX_UPLOAD_BYTES`); B2 itself
-  has a 5 GB object limit, so the application limit is the binding constraint.
+- **Per-kind upload limits** are enforced at the API layer (`MEDIA_MAX_IMAGE_BYTES`, default
+  10 MB; `MEDIA_MAX_AUDIO_BYTES`, default 50 MB); nginx's `client_max_body_size` is driven by
+  the audio cap. The audio cap matches Telegram's 50 MB bot-send limit so every uploaded audio
+  is deliverable by the bot — raising it past 50 MB would let uploads succeed but break delivery
+  unless a self-hosted Bot API server is used. B2 itself has a 5 GB object limit, so the
+  application limits are the binding constraint. The size check runs **before** the S3 upload,
+  so an oversized file is rejected with a clean 413 and never leaves an orphan object.
 - **Portability to AWS S3.** Swap `S3_ENDPOINT_URL` (remove it or set it to
   `https://s3.amazonaws.com`), `S3_REGION` (e.g. `us-east-1`), `S3_BUCKET`, and the key
   pair.  No code changes required.
@@ -677,7 +683,8 @@ The new `frontend/dist/` files are picked up on nginx restart (bind-mounted from
 | `S3_ACCESS_KEY_ID` | yes | — | S3 / B2 application key ID |
 | `S3_SECRET_ACCESS_KEY` | yes | — | S3 / B2 application key secret |
 | `S3_PRESIGN_EXPIRY_SECONDS` | no | `900` | Presigned URL TTL in seconds (15 min) |
-| `MEDIA_MAX_UPLOAD_BYTES` | no | `10485760` | Maximum upload size (10 MB) |
+| `MEDIA_MAX_IMAGE_BYTES` | no | `10485760` | Maximum image upload size (10 MB) |
+| `MEDIA_MAX_AUDIO_BYTES` | no | `52428800` | Maximum audio upload size (50 MB — Telegram bot-send cap); also drives nginx `client_max_body_size` |
 
 ---
 

@@ -83,7 +83,9 @@ async def upload_media(
 ) -> object:
     """Upload an audio or image file; persist to S3 and capture a Telegram file_id."""
     config = request.app.state.config
-    max_bytes: int = config.media_max_upload_bytes
+    max_bytes: int = (
+        config.media_max_audio_bytes if kind == "audio" else config.media_max_image_bytes
+    )
     limit_mb = max_bytes // (1024 * 1024)
     if file.size is not None and file.size > max_bytes:
         raise HTTPException(status_code=413, detail=f"File too large (max {limit_mb} MB)")
