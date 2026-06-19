@@ -1,4 +1,15 @@
 /* Design tokens — all colours derive from --tg-theme-* with light-mode fallbacks */
+
+/* Self-hosted brand font — bundled locally, zero network at runtime (Telegram CSP-safe).
+   Variable weight axis covers 400–700 from a single file. */
+@font-face {
+  font-family: 'Geist';
+  src: url('../assets/fonts/Geist-Variable.woff2') format('woff2');
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+
 :root {
   /* ── Colour palette ── */
   --color-bg:          var(--tg-theme-bg-color, #ffffff);
@@ -25,7 +36,7 @@
   --color-inactive-text: #6b7280;
 
   /* ── Typography ── */
-  --font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-family: 'Geist', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   --text-xs:   0.75rem;   /* 12px */
   --text-sm:   0.8125rem; /* 13px */
   --text-base: 0.875rem;  /* 14px */
@@ -68,6 +79,12 @@
   --z-raised:  10;
   --z-overlay: 90;
   --z-modal:   100;
+
+  /* ── Glass surfaces (translucent + blur, with edge refraction) ── */
+  --glass-bg:     color-mix(in srgb, var(--color-surface) 72%, transparent);
+  --glass-border: color-mix(in srgb, var(--color-text) 8%, transparent);
+  --glass-blur:   12px;
+  --glass-inset:  inset 0 1px 0 color-mix(in srgb, #ffffff 14%, transparent);
 
   /* ── Transition ── */
   --transition-fast: 150ms;

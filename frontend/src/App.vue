@@ -69,6 +69,18 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
+/* Subtle grain overlay — breaks the flat digital surface. Fixed + non-interactive,
+   so it never repaints on scroll. Inline SVG fractal noise = zero network. */
+body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-modal);
+  pointer-events: none;
+  opacity: 0.025;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
 /* shared view wrapper */
 .view {
   max-width: var(--container-max);
@@ -114,6 +126,28 @@ body {
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
+}
+
+/* staggered entry — cards cascade in on mount (GPU: transform + opacity only) */
+@keyframes card-enter {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.card-list > * {
+  animation: card-enter var(--transition-base) cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+.card-list > *:nth-child(1) { animation-delay: 0ms; }
+.card-list > *:nth-child(2) { animation-delay: 40ms; }
+.card-list > *:nth-child(3) { animation-delay: 80ms; }
+.card-list > *:nth-child(4) { animation-delay: 120ms; }
+.card-list > *:nth-child(5) { animation-delay: 160ms; }
+.card-list > *:nth-child(6) { animation-delay: 200ms; }
+.card-list > *:nth-child(7) { animation-delay: 240ms; }
+.card-list > *:nth-child(n + 8) { animation-delay: 280ms; }
+
+@media (prefers-reduced-motion: reduce) {
+  .card-list > * { animation: none; }
 }
 
 /* shared table wrap (wide screens only) */

@@ -659,11 +659,12 @@ Token groups:
 | Group | Variables | Notes |
 |---|---|---|
 | Colour | `--color-bg`, `--color-surface`, `--color-text`, `--color-hint`, `--color-accent`, `--color-accent-text`, `--color-link`, `--color-danger*`, `--color-success*`, `--color-warning*`, `--color-info-bg`, `--color-active-*`, `--color-inactive-*` | All reference `--tg-theme-*` where applicable |
-| Typography | `--text-xs` … `--text-xl`, `--font-weight-medium` (500), `--font-weight-semibold` (600), `--font-weight-bold` (700), `--font-family`, `--leading-tight`, `--leading-normal` | System font stack only — no webfonts |
+| Typography | `--text-xs` … `--text-xl`, `--font-weight-medium` (500), `--font-weight-semibold` (600), `--font-weight-bold` (700), `--font-family`, `--leading-tight`, `--leading-normal` | `--font-family` is `'Geist'` with a system fallback stack (see Self-hosted font below) |
 | Spacing | `--space-1` (4px) … `--space-8` (32px) | 4 px base grid |
 | Radius | `--radius-sm` (4px), `--radius-md` (8px), `--radius-lg` (12px), `--radius-xl` (16px), `--radius-full` | |
 | Shadow | `--shadow-sm`, `--shadow-md`, `--shadow-lg` | Tinted to bg hue, not pure black |
-| Z-index | `--z-overlay` (90), `--z-modal` (100) | |
+| Glass | `--glass-bg`, `--glass-border`, `--glass-blur` (12px), `--glass-inset` | Translucent surface + blur + 1px edge-refraction highlight; used by the sticky top nav and modal overlay |
+| Z-index | `--z-raised` (10), `--z-overlay` (90), `--z-modal` (100) | |
 | Layout | `--container-max` (640px), `--tap-target` (44px) | |
 
 ### `frontend/src/components/ui/`

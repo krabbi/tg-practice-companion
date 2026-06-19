@@ -35,7 +35,9 @@ function onOverlayClick(): void {
 .ui-modal-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(15, 15, 15, 0.5);
+  background: rgba(15, 15, 15, 0.4);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
   display: flex;
   align-items: flex-start;
   justify-content: center;
@@ -49,7 +51,8 @@ function onOverlayClick(): void {
   border-radius: var(--radius-xl);
   width: 100%;
   max-width: 520px;
-  box-shadow: var(--shadow-lg);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--shadow-lg), var(--glass-inset);
   margin-top: var(--space-2);
 }
 
