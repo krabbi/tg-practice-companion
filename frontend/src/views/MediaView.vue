@@ -16,7 +16,7 @@ import Field from '@/components/ui/Field.vue'
 import EmptyState from '@/components/ui/EmptyState.vue'
 import Spinner from '@/components/ui/Spinner.vue'
 
-type KindFilter = 'all' | 'audio' | 'image'
+type KindFilter = 'all' | 'audio' | 'image' | 'video'
 
 const assets = ref<MediaAsset[]>([])
 const loading = ref(false)
@@ -30,7 +30,7 @@ const expandedIds = ref<Set<string>>(new Set())
 
 const uploadFileRef = ref<HTMLInputElement | null>(null)
 const uploadFile = ref<File | null>(null)
-const uploadKind = ref<'audio' | 'image'>('image')
+const uploadKind = ref<'audio' | 'image' | 'video'>('image')
 const uploading = ref(false)
 const uploadProgress = ref(0)
 const uploadError = ref('')
@@ -180,6 +180,10 @@ onMounted(loadAssets)
               <input v-model="uploadKind" type="radio" value="audio" />
               Аудио
             </label>
+            <label class="radio-label">
+              <input v-model="uploadKind" type="radio" value="video" />
+              Видео
+            </label>
           </div>
         </Field>
 
@@ -188,7 +192,7 @@ onMounted(loadAssets)
             id="upload-file-input"
             ref="uploadFileRef"
             type="file"
-            :accept="uploadKind === 'image' ? 'image/*' : 'audio/*'"
+            :accept="uploadKind === 'image' ? 'image/*' : uploadKind === 'audio' ? 'audio/*' : 'video/*'"
             @change="onFileChange"
           />
         </Field>
@@ -230,7 +234,8 @@ onMounted(loadAssets)
               <span class="info-key">Telegram file_id</span>
               <code class="asset-id small">{{ uploadedAsset.telegram_file_id }}</code>
             </div>
-            <p class="hint">file_id записан и будет использоваться при отправке через Telegram.</p>
+            <p v-if="uploadedAsset.telegram_file_id" class="hint">file_id записан и будет использоваться при отправке через Telegram.</p>
+            <p v-else-if="uploadedAsset.kind === 'video'" class="hint">Видео хранится только в S3 (Telegram Bot API ограничивает загрузку до 50 МБ).</p>
           </div>
         </div>
       </div>
@@ -262,6 +267,13 @@ onMounted(loadAssets)
         >
           Аудио
         </button>
+        <button
+          class="tab-btn"
+          :class="{ active: kindFilter === 'video' }"
+          @click="kindFilter = 'video'"
+        >
+          Видео
+        </button>
       </div>
 
       <p v-if="listError" class="error-msg">{{ listError }}</p>
@@ -277,8 +289,8 @@ onMounted(loadAssets)
       <div v-if="filteredAssets.length > 0" class="card-list">
         <Card v-for="a in filteredAssets" :key="a.id">
           <div class="card-row">
-            <Badge :variant="a.kind === 'image' ? 'info' : 'warning'">
-              {{ a.kind === 'image' ? 'Изображение' : 'Аудио' }}
+            <Badge :variant="a.kind === 'image' ? 'info' : a.kind === 'video' ? 'success' : 'warning'">
+              {{ a.kind === 'image' ? 'Изображение' : a.kind === 'video' ? 'Видео' : 'Аудио' }}
             </Badge>
             <span class="card-date">{{ formatDate(a.created_at) }}</span>
           </div>
@@ -312,6 +324,12 @@ onMounted(loadAssets)
                 controls
                 class="preview-audio"
               />
+              <video
+                v-else-if="a.kind === 'video'"
+                :src="previewUrls[a.id]"
+                controls
+                class="preview-video"
+              />
               <div class="preview-download">
                 <a
                   :href="previewUrls[a.id]"
@@ -343,7 +361,7 @@ onMounted(loadAssets)
               <tr>
                 <td>
                   <span class="kind-badge" :class="`kind-${a.kind}`">
-                    {{ a.kind === 'image' ? '🖼 Изобр.' : '🔊 Аудио' }}
+                    {{ a.kind === 'image' ? '🖼 Изобр.' : a.kind === 'video' ? '🎬 Видео' : '🔊 Аудио' }}
                   </span>
                 </td>
                 <td class="filename-cell">{{ a.original_filename ?? '—' }}</td>
@@ -387,6 +405,12 @@ onMounted(loadAssets)
                         :src="previewUrls[a.id]"
                         controls
                         class="preview-audio"
+                      />
+                      <video
+                        v-else-if="a.kind === 'video'"
+                        :src="previewUrls[a.id]"
+                        controls
+                        class="preview-video"
                       />
                       <div class="preview-download">
                         <a
@@ -667,6 +691,7 @@ onMounted(loadAssets)
 
 .kind-image { background: var(--color-info-bg); color: var(--color-link); }
 .kind-audio { background: var(--color-warning-bg); color: var(--color-warning); }
+.kind-video { background: var(--color-success-bg); color: var(--color-success); }
 
 .filename-cell {
   font-size: var(--text-xs);
@@ -723,6 +748,7 @@ onMounted(loadAssets)
 }
 
 .preview-audio { width: 100%; }
+.preview-video { max-width: 100%; max-height: 300px; border-radius: var(--radius-md); }
 
 .preview-download {
   display: flex;

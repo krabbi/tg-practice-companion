@@ -4,7 +4,7 @@ const API_BASE: string = import.meta.env.VITE_API_BASE_URL ?? ''
 
 export interface MediaAsset {
   id: string
-  kind: 'audio' | 'image'
+  kind: 'audio' | 'image' | 'video'
   storage_path: string | null
   telegram_file_id: string | null
   mime: string | null
@@ -31,7 +31,7 @@ export interface MotivationalImageCreate {
 
 export function uploadMediaAsset(
   file: File,
-  kind: 'audio' | 'image',
+  kind: 'audio' | 'image' | 'video',
   onProgress?: (percent: number) => void,
 ): Promise<MediaAsset> {
   const token = localStorage.getItem('auth_token')
@@ -85,7 +85,7 @@ export function getMediaUrl(id: string): Promise<PresignedUrlResponse> {
   return apiFetch<PresignedUrlResponse>(`/api/media/${id}/url`)
 }
 
-export function listMediaAssets(kind?: 'audio' | 'image'): Promise<MediaAsset[]> {
+export function listMediaAssets(kind?: 'audio' | 'image' | 'video'): Promise<MediaAsset[]> {
   const query = kind ? `?kind=${kind}` : ''
   return apiFetch<MediaAsset[]>(`/api/media${query}`)
 }
