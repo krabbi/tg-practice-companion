@@ -664,7 +664,7 @@ Token groups:
 | Spacing | `--space-1` (4px) … `--space-8` (32px) | 4 px base grid |
 | Radius | `--radius-sm` (4px), `--radius-md` (8px), `--radius-lg` (12px), `--radius-xl` (16px), `--radius-full` | |
 | Shadow | `--shadow-sm`, `--shadow-md`, `--shadow-lg` | Tinted to bg hue, not pure black |
-| Glass | `--glass-bg`, `--glass-border`, `--glass-blur` (12px), `--glass-inset` | Translucent surface + blur + 1px edge-refraction highlight; used by the sticky top nav and modal overlay |
+| Surface edge | `--glass-border`, `--glass-inset` | Hairline border + 1px top highlight on the top nav and modal card. `backdrop-filter` blur is deliberately not used — it greys out and breaks route repaints in the Android Telegram WebView |
 | Z-index | `--z-raised` (10), `--z-overlay` (90), `--z-modal` (100) | |
 | Layout | `--container-max` (640px), `--tap-target` (44px) | |
 

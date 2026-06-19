@@ -43,15 +43,8 @@ const navItems = [
 .nav {
   display: flex;
   overflow-x: auto;
-  position: sticky;
-  top: 0;
-  z-index: var(--z-raised);
-  /* glass: translucent surface + blur, with a 1px edge-refraction highlight */
-  background-color: var(--glass-bg);
-  backdrop-filter: blur(var(--glass-blur));
-  -webkit-backdrop-filter: blur(var(--glass-blur));
+  background-color: var(--color-surface);
   border-bottom: 1px solid var(--glass-border);
-  box-shadow: var(--glass-inset);
   padding: var(--space-2);
   padding-top: calc(var(--space-2) + var(--tg-safe-area-inset-top, env(safe-area-inset-top, 0px)));
   gap: var(--space-1);
