@@ -80,10 +80,10 @@
   --z-overlay: 90;
   --z-modal:   100;
 
-  /* ── Glass surfaces (translucent + blur, with edge refraction) ── */
-  --glass-bg:     color-mix(in srgb, var(--color-surface) 72%, transparent);
+  /* ── Surface edge treatment (hairline border + top highlight) ──
+     NB: backdrop-filter blur is intentionally avoided — it renders as a grey
+     box and breaks route repaints inside the Android Telegram WebView. */
   --glass-border: color-mix(in srgb, var(--color-text) 8%, transparent);
-  --glass-blur:   12px;
   --glass-inset:  inset 0 1px 0 color-mix(in srgb, #ffffff 14%, transparent);
 
   /* ── Transition ── */

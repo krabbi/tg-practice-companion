@@ -35,6 +35,7 @@ const uploading = ref(false)
 const uploadProgress = ref(0)
 const uploadError = ref('')
 const uploadedAsset = ref<MediaAsset | null>(null)
+const uploadedName = ref('')
 
 const motivAssetId = ref('')
 const motivActive = ref(true)
@@ -70,6 +71,7 @@ function onFileChange(e: Event): void {
 
 async function doUpload(): Promise<void> {
   if (!uploadFile.value) return
+  const fileName = uploadFile.value.name
   uploading.value = true
   uploadProgress.value = 0
   uploadError.value = ''
@@ -79,6 +81,7 @@ async function doUpload(): Promise<void> {
       uploadProgress.value = p
     })
     uploadedAsset.value = asset
+    uploadedName.value = fileName
     assets.value.unshift(asset)
     uploadFile.value = null
     if (uploadFileRef.value) uploadFileRef.value.value = ''
@@ -208,6 +211,10 @@ onMounted(loadAssets)
         <div v-if="uploadedAsset" class="upload-result">
           <p class="success-msg">Файл загружен</p>
           <div class="asset-info">
+            <div v-if="uploadedName" class="info-row">
+              <span class="info-key">Имя файла</span>
+              <span class="asset-name">{{ uploadedName }}</span>
+            </div>
             <div class="info-row">
               <span class="info-key">UUID</span>
               <code class="asset-id">{{ uploadedAsset.id }}</code>
@@ -275,6 +282,7 @@ onMounted(loadAssets)
             </Badge>
             <span class="card-date">{{ formatDate(a.created_at) }}</span>
           </div>
+          <div class="card-filename">{{ a.original_filename ?? '—' }}</div>
           <code class="asset-id small">{{ a.id }}</code>
           <div class="card-actions">
             <Button variant="secondary" size="sm" @click="copyId(a.id)">Копировать</Button>
@@ -323,6 +331,7 @@ onMounted(loadAssets)
           <thead>
             <tr>
               <th>Тип</th>
+              <th>Имя</th>
               <th>MIME</th>
               <th>UUID</th>
               <th>Дата</th>
@@ -337,6 +346,7 @@ onMounted(loadAssets)
                     {{ a.kind === 'image' ? '🖼 Изобр.' : '🔊 Аудио' }}
                   </span>
                 </td>
+                <td class="filename-cell">{{ a.original_filename ?? '—' }}</td>
                 <td class="mime-cell">{{ a.mime ?? '—' }}</td>
                 <td>
                   <div class="uuid-cell">
@@ -361,7 +371,7 @@ onMounted(loadAssets)
                 </td>
               </tr>
               <tr v-if="expandedIds.has(a.id)" class="preview-row">
-                <td colspan="5">
+                <td colspan="6">
                   <div class="preview-cell">
                     <p v-if="previewLoading[a.id]" class="hint">Загрузка...</p>
                     <p v-else-if="previewErrors[a.id]" class="error-msg">{{ previewErrors[a.id] }}</p>
@@ -416,7 +426,7 @@ onMounted(loadAssets)
           <select v-model="motivAssetId" required>
             <option value="" disabled>— выберите файл —</option>
             <option v-for="a in imageAssets" :key="a.id" :value="a.id">
-              {{ a.id }} ({{ a.mime ?? a.kind }})
+              {{ a.original_filename ?? `${a.id} (${a.mime ?? a.kind})` }}
             </option>
           </select>
         </Field>
@@ -568,6 +578,12 @@ onMounted(loadAssets)
 
 .asset-id.small { font-size: var(--text-xs); }
 
+.asset-name {
+  font-size: var(--text-sm);
+  font-weight: var(--font-weight-medium);
+  word-break: break-all;
+}
+
 /* Filter tabs */
 .filter-tabs {
   display: flex;
@@ -651,6 +667,20 @@ onMounted(loadAssets)
 
 .kind-image { background: var(--color-info-bg); color: var(--color-link); }
 .kind-audio { background: var(--color-warning-bg); color: var(--color-warning); }
+
+.filename-cell {
+  font-size: var(--text-xs);
+  max-width: 12rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.card-filename {
+  font-size: var(--text-sm);
+  font-weight: var(--font-weight-medium);
+  word-break: break-all;
+}
 
 .mime-cell { color: var(--color-hint); font-size: var(--text-xs); }
 

@@ -31,6 +31,7 @@ Owned media entity for audio/image practices. Stage 1 populates `telegram_file_i
 | `storage_path` | `String(512)` | YES | — | S3 object key (`kind/<uuid><ext>`); null in Stage 1 |
 | `telegram_file_id` | `String(256)` | YES | — | Stored Telegram file ID for re-sending (AC-2) |
 | `mime` | `String(128)` | YES | — | MIME type, e.g. `audio/mpeg` |
+| `original_filename` | `String(255)` | YES | — | Original browser-provided filename at upload time |
 | `created_at` | `DateTime(tz=True)` | NO | `now()` | Row creation timestamp |
 | `updated_at` | `DateTime(tz=True)` | NO | `now()` | Last update timestamp |
 
@@ -38,7 +39,7 @@ Invariant: at least one of `storage_path` / `telegram_file_id` must be non-null 
 
 Index: `ix_media_assets_user_id(user_id)`
 
-Migrations: `alembic/versions/0002_practice_engine.py` (initial schema); `alembic/versions/0010_per_user_content.py` (added `user_id`).
+Migrations: `alembic/versions/0002_practice_engine.py` (initial schema); `alembic/versions/0010_per_user_content.py` (added `user_id`); `alembic/versions/0011_media_asset_original_filename.py` (added `original_filename`).
 
 ---
 
@@ -664,7 +665,7 @@ Token groups:
 | Spacing | `--space-1` (4px) … `--space-8` (32px) | 4 px base grid |
 | Radius | `--radius-sm` (4px), `--radius-md` (8px), `--radius-lg` (12px), `--radius-xl` (16px), `--radius-full` | |
 | Shadow | `--shadow-sm`, `--shadow-md`, `--shadow-lg` | Tinted to bg hue, not pure black |
-| Glass | `--glass-bg`, `--glass-border`, `--glass-blur` (12px), `--glass-inset` | Translucent surface + blur + 1px edge-refraction highlight; used by the sticky top nav and modal overlay |
+| Surface edge | `--glass-border`, `--glass-inset` | Hairline border + 1px top highlight on the top nav and modal card. `backdrop-filter` blur is deliberately not used — it greys out and breaks route repaints in the Android Telegram WebView |
 | Z-index | `--z-raised` (10), `--z-overlay` (90), `--z-modal` (100) | |
 | Layout | `--container-max` (640px), `--tap-target` (44px) | |
 

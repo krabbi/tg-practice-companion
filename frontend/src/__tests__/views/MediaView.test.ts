@@ -33,6 +33,7 @@ const IMAGE_ASSET: MediaAsset = {
   storage_path: '/uploads/img.jpg',
   telegram_file_id: null,
   mime: 'image/jpeg',
+  original_filename: 'my-photo.jpg',
   created_at: '2024-01-01T00:00:00',
   updated_at: '2024-01-01T00:00:00',
 }
@@ -43,6 +44,7 @@ const AUDIO_ASSET: MediaAsset = {
   storage_path: '/uploads/audio.mp3',
   telegram_file_id: null,
   mime: 'audio/mpeg',
+  original_filename: 'session.mp3',
   created_at: '2024-01-01T00:00:00',
   updated_at: '2024-01-01T00:00:00',
 }
@@ -140,7 +142,8 @@ describe('MediaView', () => {
 
     const select = wrapper.find('select')
     expect(select.exists()).toBe(true)
-    expect(select.text()).toContain(IMAGE_ASSET.id)
+    // When original_filename is present it is shown in the option text
+    expect(select.text()).toContain(IMAGE_ASSET.original_filename)
   })
 
   it('submitting the motiv form calls createMotivationalImage and shows success', async () => {
@@ -264,5 +267,74 @@ describe('MediaView', () => {
     const previewRow = wrapper.find('tr.preview-row')
     expect(previewRow.exists()).toBe(true)
     expect(previewRow.text()).toContain('Файл не найден')
+  })
+
+  it('table shows original_filename in the Имя column', async () => {
+    mockListMediaAssets.mockResolvedValueOnce([IMAGE_ASSET])
+
+    const wrapper = mount(MediaView)
+    await flushPromises()
+
+    const table = wrapper.find('table.media-table')
+    expect(table.text()).toContain('Имя')
+    expect(table.text()).toContain('my-photo.jpg')
+  })
+
+  it('table shows — when original_filename is null', async () => {
+    const assetNoName: MediaAsset = { ...IMAGE_ASSET, original_filename: null }
+    mockListMediaAssets.mockResolvedValueOnce([assetNoName])
+
+    const wrapper = mount(MediaView)
+    await flushPromises()
+
+    const table = wrapper.find('table.media-table')
+    const filenameCell = table.find('td.filename-cell')
+    expect(filenameCell.exists()).toBe(true)
+    expect(filenameCell.text()).toBe('—')
+  })
+
+  it('mobile card list shows original_filename prominently', async () => {
+    mockListMediaAssets.mockResolvedValueOnce([IMAGE_ASSET])
+
+    const wrapper = mount(MediaView)
+    await flushPromises()
+
+    const cardList = wrapper.find('.card-list')
+    expect(cardList.text()).toContain('my-photo.jpg')
+  })
+
+  it('mobile card list shows — when original_filename is null', async () => {
+    const assetNoName: MediaAsset = { ...IMAGE_ASSET, original_filename: null }
+    mockListMediaAssets.mockResolvedValueOnce([assetNoName])
+
+    const wrapper = mount(MediaView)
+    await flushPromises()
+
+    const cardFilename = wrapper.find('.card-filename')
+    expect(cardFilename.exists()).toBe(true)
+    expect(cardFilename.text()).toBe('—')
+  })
+
+  it('motivational image select shows original_filename when present', async () => {
+    mockListMediaAssets.mockResolvedValueOnce([IMAGE_ASSET])
+
+    const wrapper = mount(MediaView)
+    await flushPromises()
+
+    const select = wrapper.find('select')
+    expect(select.text()).toContain('my-photo.jpg')
+    // UUID should NOT appear since original_filename is present
+    expect(select.text()).not.toContain('img-1 (')
+  })
+
+  it('motivational image select falls back to UUID+mime when original_filename is null', async () => {
+    const assetNoName: MediaAsset = { ...IMAGE_ASSET, original_filename: null }
+    mockListMediaAssets.mockResolvedValueOnce([assetNoName])
+
+    const wrapper = mount(MediaView)
+    await flushPromises()
+
+    const select = wrapper.find('select')
+    expect(select.text()).toContain('img-1 (image/jpeg)')
   })
 })
