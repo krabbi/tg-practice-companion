@@ -1,4 +1,4 @@
-"""Authentication middleware — single-ID whitelist (AC-1)."""
+"""Authentication middleware — optional whitelist (AC-1)."""
 
 import logging
 from collections.abc import Awaitable, Callable
@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 
 
 class AuthMiddleware(BaseMiddleware):
-    """Drop updates from any Telegram user not in the allowed-IDs whitelist."""
+    """Drop updates from non-whitelisted users; allow all when whitelist is empty."""
 
     def __init__(self, allowed_user_ids: list[int]) -> None:
         self._allowed: frozenset[int] = frozenset(allowed_user_ids)
@@ -22,7 +22,11 @@ class AuthMiddleware(BaseMiddleware):
         event: TelegramObject,
         data: dict[str, Any],
     ) -> Any:
-        """Pass the update through only if the sender is whitelisted."""
+        """Pass the update through only if the sender is allowed.
+
+        When the whitelist is empty every identified user is permitted; anonymous
+        channel posts are always dropped.
+        """
         update: Update | None = data.get("event_update")
         user = data.get("event_from_user")
 
@@ -32,7 +36,7 @@ class AuthMiddleware(BaseMiddleware):
                 logger.debug("Dropping anonymous update %s", update.update_id)
             return None
 
-        if user.id not in self._allowed:
+        if self._allowed and user.id not in self._allowed:
             logger.warning("Dropping update from unauthorized user %s", user.id)
             return None
 

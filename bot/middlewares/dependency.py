@@ -25,6 +25,7 @@ from bot.services.report_service import ReportService
 from bot.services.skip_day_service import SkipDayService
 from bot.services.timezone_service import TimezoneService
 from bot.services.transcription_service import TranscriptionService
+from bot.services.user_service import UserService
 from bot.services.want_list_service import WantListService
 
 
@@ -57,6 +58,14 @@ class DependencyMiddleware(BaseMiddleware):
             assessment_repo = SelfAssessmentRepository(session)
             want_list_repo = WantListRepository(session)
             good_deed_repo = GoodDeedRepository(session)
+
+            # Provision the User row on first contact
+            event_from_user = data.get("event_from_user")
+            if event_from_user is not None:
+                user_service = UserService(session, user_repo)
+                await user_service.get_or_create(
+                    event_from_user.id, language=self._config.default_language
+                )
 
             # Services
             data["skip_day_service"] = SkipDayService(session, user_repo)

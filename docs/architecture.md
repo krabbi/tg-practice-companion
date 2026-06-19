@@ -283,7 +283,9 @@ Migration: `alembic/versions/0006_lists.py`
 `bot/bot.py::create_dispatcher` wires all middleware and routers at startup:
 
 1. `AuthMiddleware(config.allowed_user_ids)` — registered as `dp.update.outer_middleware`;
-   drops updates from non-whitelisted users before any handler runs.
+   drops anonymous channel posts unconditionally; when `allowed_user_ids` is **non-empty**,
+   also drops updates from users not in the list; when `allowed_user_ids` is **empty**, lets
+   every identified user through (open-access mode).
 2. `commands.router` — first registered router; handles `/start` and `/help`.
 
 Router registration order is load-bearing: the commands router must come before the
@@ -294,8 +296,10 @@ catch-all journal router (M2) so that `/start` and `/help` are matched first.
 `create_dispatcher` now accepts an optional `session_factory` parameter. When provided:
 
 3. `DependencyMiddleware(session_factory, config)` — registered as `dp.update.middleware`;
-   opens one `AsyncSession` per update, builds all repositories and services, injects them
-   into the handler `data` dict, then closes the session after the handler returns.
+   opens one `AsyncSession` per update; if `event_from_user` is present, calls
+   `user_repo.get_or_create(user_id, language=config.default_language)` and commits to
+   provision the `User` row on first contact; then builds all repositories and services,
+   injects them into the handler `data` dict, and closes the session after the handler returns.
 4. `skip_day.router` — registered after `commands.router`; handles `/skip_day` and the
    `skip_day:confirm` inline callback.
 
@@ -414,7 +418,7 @@ All fields are loaded from environment variables (or `.env` file) via `pydantic-
 | `anthropic_api_key` | `ANTHROPIC_API_KEY` | `str` | required | Anthropic API key |
 | `groq_api_key` | `GROQ_API_KEY` | `str` | `""` | Empty string disables voice transcription |
 | `database_url` | `DATABASE_URL` | `str` | required | Async SQLAlchemy URL, e.g. `postgresql+asyncpg://...` |
-| `allowed_user_ids` | `ALLOWED_USER_IDS` | `list[int]` | required | CSV of Telegram user IDs; exactly one in practice |
+| `allowed_user_ids` | `ALLOWED_USER_IDS` | `list[int]` | required | CSV of Telegram user IDs. Non-empty → whitelist enforced (bot + web); empty string `""` → open-access mode (any identified user allowed) |
 | `monthly_cost_limit_usd` | `MONTHLY_COST_LIMIT_USD` | `float` | `10.0` | Monthly API spend cap (AC-16) |
 | `analysis_cost_cap_usd` | `ANALYSIS_COST_CAP_USD` | `float` | `0.05` | Per-run morning analysis cap (AC-11) |
 | `llm_model` | `LLM_MODEL` | `str` | `"claude-haiku-4-5-20251001"` | Pinned Anthropic model |
@@ -486,14 +490,14 @@ The module is import-free of FastAPI — pure functions, fully unit-testable.
 | Dependency | Type | Notes |
 |---|---|---|
 | `get_db_session` | `AsyncGenerator[AsyncSession, None]` | Yields one session per request from `app.state.session_factory` |
-| `get_current_user` | `dict` | Extracts Bearer JWT; raises 401 missing/invalid, 403 not in `allowed_user_ids` |
+| `get_current_user` | `dict` | Extracts Bearer JWT; raises 401 missing/invalid; raises 403 not in `allowed_user_ids` only when `allowed_user_ids` is non-empty |
 
 ### Endpoints
 
 | Method | Path | Auth | Response |
 |--------|------|------|----------|
 | `GET` | `/api/health` | none | `{"status": "ok"}` |
-| `POST` | `/api/auth/telegram` | none | `{"token": <jwt>}` — validates TMA initData, allowlist check (403), issues JWT |
+| `POST` | `/api/auth/telegram` | none | `{"token": <jwt>}` — validates TMA initData; enforces allowlist (403) only when `allowed_user_ids` is non-empty; provisions `User` row via `get_or_create`; issues JWT |
 | `GET` | `/api/auth/me` | Bearer JWT | JWT claims `{"id": <telegram_id>, "exp": <ts>}` |
 | `GET` | `/api/practices` | Bearer JWT | Array of `PracticeResponse`; optional `?active=true\|false` filter |
 | `GET` | `/api/practices/{id}` | Bearer JWT | Single `PracticeResponse`; 404 if not found |
