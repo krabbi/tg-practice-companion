@@ -438,7 +438,8 @@ All fields are loaded from environment variables (or `.env` file) via `pydantic-
 | `s3_secret_access_key` | `S3_SECRET_ACCESS_KEY` | `str` | `""` | S3 secret access key |
 | `s3_presign_expiry_seconds` | `S3_PRESIGN_EXPIRY_SECONDS` | `int` | `900` | Default presigned URL TTL in seconds |
 | `media_max_image_bytes` | `MEDIA_MAX_IMAGE_BYTES` | `int` | `10485760` | Maximum allowed image upload size (10 MB) |
-| `media_max_audio_bytes` | `MEDIA_MAX_AUDIO_BYTES` | `int` | `52428800` | Maximum allowed audio upload size (50 MB — Telegram's bot-send cap); nginx `client_max_body_size` is driven by this value |
+| `media_max_audio_bytes` | `MEDIA_MAX_AUDIO_BYTES` | `int` | `52428800` | Maximum allowed audio upload size (50 MB — Telegram's bot-send cap) |
+| `media_max_video_bytes` | `MEDIA_MAX_VIDEO_BYTES` | `int` | `262144000` | Maximum allowed video upload size (250 MB); nginx `client_max_body_size` is driven by this value |
 | `web_app_url` | `WEB_APP_URL` | `str` | `""` | HTTPS URL of the deployed web admin SPA (AC-19); empty string disables the `/admin` command |
 
 ## Frontend config (SPA build-time)
@@ -546,7 +547,7 @@ The service uses `uvicorn web.main:create_app --factory --host 0.0.0.0 --port ${
 It shares the `db` service's Postgres instance via the same `DATABASE_URL`.
 
 Required env vars: `DATABASE_URL`, `JWT_SECRET`, `TELEGRAM_BOT_TOKEN`, `ALLOWED_USER_IDS`, `ANTHROPIC_API_KEY`, `S3_ENDPOINT_URL`, `S3_REGION`, `S3_BUCKET`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`.
-Optional: `CORS_ORIGINS` (comma-separated origins), `WEB_PORT` (default `8000`), `S3_PRESIGN_EXPIRY_SECONDS` (default `900`), `MEDIA_MAX_IMAGE_BYTES` (default `10485760`), `MEDIA_MAX_AUDIO_BYTES` (default `52428800`).
+Optional: `CORS_ORIGINS` (comma-separated origins), `WEB_PORT` (default `8000`), `S3_PRESIGN_EXPIRY_SECONDS` (default `900`), `MEDIA_MAX_IMAGE_BYTES` (default `10485760`), `MEDIA_MAX_AUDIO_BYTES` (default `52428800`), `MEDIA_MAX_VIDEO_BYTES` (default `262144000`).
 
 Media files are stored in S3-compatible object storage (Backblaze B2 or AWS S3). There is no local media volume. `storage_path` in `media_assets` holds the S3 object key (e.g. `image/<uuid>.jpg`) — no scheme, no leading slash. The `S3StorageService` (`bot/services/storage_service.py`) is constructed in `web/main.py` when all five S3 vars are present; it is None otherwise (upload endpoints return 503).
 

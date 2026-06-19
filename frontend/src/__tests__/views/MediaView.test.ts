@@ -49,6 +49,17 @@ const AUDIO_ASSET: MediaAsset = {
   updated_at: '2024-01-01T00:00:00',
 }
 
+const VIDEO_ASSET: MediaAsset = {
+  id: 'vid-1',
+  kind: 'video',
+  storage_path: '/uploads/video.mp4',
+  telegram_file_id: null,
+  mime: 'video/mp4',
+  original_filename: 'lecture.mp4',
+  created_at: '2024-01-01T00:00:00',
+  updated_at: '2024-01-01T00:00:00',
+}
+
 describe('MediaView', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
@@ -336,5 +347,78 @@ describe('MediaView', () => {
 
     const select = wrapper.find('select')
     expect(select.text()).toContain('img-1 (image/jpeg)')
+  })
+
+  it('video asset shows "Видео" badge in card list and table', async () => {
+    mockListMediaAssets.mockResolvedValueOnce([VIDEO_ASSET])
+
+    const wrapper = mount(MediaView)
+    await flushPromises()
+
+    expect(wrapper.find('.card-list').text()).toContain('Видео')
+    expect(wrapper.find('table.media-table').text()).toContain('Видео')
+    expect(wrapper.find('table.media-table').text()).not.toContain('Аудио')
+  })
+
+  it('video filter tab shows only video assets', async () => {
+    mockListMediaAssets.mockResolvedValueOnce([IMAGE_ASSET, AUDIO_ASSET, VIDEO_ASSET])
+
+    const wrapper = mount(MediaView)
+    await flushPromises()
+
+    const videoTab = wrapper.findAll('button.tab-btn').find((t) => t.text().includes('Видео'))
+    expect(videoTab).toBeDefined()
+    await videoTab!.trigger('click')
+
+    const tableText = wrapper.find('table.media-table tbody').text()
+    expect(tableText).toContain(VIDEO_ASSET.id)
+    expect(tableText).not.toContain(IMAGE_ASSET.id)
+    expect(tableText).not.toContain(AUDIO_ASSET.id)
+  })
+
+  it('clicking "Просмотр" on a video row renders a video element', async () => {
+    mockListMediaAssets.mockResolvedValueOnce([VIDEO_ASSET])
+    mockGetMediaUrl.mockResolvedValueOnce({
+      url: 'https://s3.example.com/video.mp4?sig=xyz',
+      expires_in: 900,
+    })
+
+    const wrapper = mount(MediaView)
+    await flushPromises()
+
+    const tablePreviewBtn = wrapper
+      .find('table.media-table')
+      .findAll('button')
+      .find((b) => b.text() === 'Просмотр')
+    await tablePreviewBtn!.trigger('click')
+    await flushPromises()
+
+    const video = wrapper.find('video.preview-video')
+    expect(video.exists()).toBe(true)
+    expect(video.attributes('src')).toBe('https://s3.example.com/video.mp4?sig=xyz')
+  })
+
+  it('upload result for video shows S3-only hint instead of Telegram hint', async () => {
+    const newVideoAsset: MediaAsset = { ...VIDEO_ASSET, id: 'new-vid', telegram_file_id: null }
+    mockUploadMediaAsset.mockResolvedValueOnce(newVideoAsset)
+
+    const wrapper = mount(MediaView)
+    await flushPromises()
+
+    // Set file and kind directly on the component so doUpload() doesn't short-circuit
+    const vm = wrapper.vm as unknown as {
+      uploadFile: File | null
+      uploadKind: string
+      doUpload: () => Promise<void>
+    }
+    vm.uploadFile = new File(['test'], 'lecture.mp4', { type: 'video/mp4' })
+    vm.uploadKind = 'video'
+    await wrapper.vm.$nextTick()
+
+    await vm.doUpload()
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('S3')
+    expect(wrapper.text()).not.toContain('file_id записан')
   })
 })

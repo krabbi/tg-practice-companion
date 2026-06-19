@@ -334,15 +334,12 @@ async def test_upload_video_accepted():
     s3.put_object.assert_awaited_once()
 
 
-async def test_send_to_telegram_video_returns_file_id():
+async def test_send_to_telegram_video_returns_none_without_calling_telegram():
+    # Videos skip Telegram: Bot API enforces a 50 MB limit but we accept up to 250 MB.
     bot = MagicMock()
-    video_obj = MagicMock()
-    video_obj.file_id = "VIDEO_FILE_ID"
-    video_msg = MagicMock()
-    video_msg.video = video_obj
-    bot.send_video = AsyncMock(return_value=video_msg)
+    bot.send_video = AsyncMock()
 
     result = await _send_to_telegram(bot, 1, b"v", "clip.mp4", "video")
 
-    assert result == "VIDEO_FILE_ID"
-    bot.send_video.assert_awaited_once()
+    assert result is None
+    bot.send_video.assert_not_called()

@@ -166,9 +166,9 @@ async def _send_to_telegram(
         if msg.photo:
             return msg.photo[-1].file_id
     elif kind == "video":
-        msg = await bot.send_video(chat_id=chat_id, video=input_file)  # type: ignore[union-attr]
-        if msg.video:
-            return msg.video.file_id
+        # Videos are S3-only: Telegram's Bot API enforces a 50 MB upload limit,
+        # but the video cap is 250 MB, so we never send video to Telegram.
+        return None
     else:
         msg = await bot.send_audio(chat_id=chat_id, audio=input_file)  # type: ignore[union-attr]
         if msg.audio:

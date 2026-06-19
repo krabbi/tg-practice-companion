@@ -27,6 +27,7 @@ _BASE_CONFIG = {
     "cors_origins": [],
     "send_window_start": 6,
     "send_window_end": 22,
+    "media_max_video_bytes": 262144000,
 }
 
 ALLOWED_USER_ID = 123456789
@@ -224,6 +225,65 @@ async def test_upload_audio_over_image_limit_passes(
         "/api/media", data={"kind": "audio"}, files=files, headers=auth_headers
     )
     assert resp.status_code == 201
+
+
+# ---------------------------------------------------------------------------
+# Video upload round-trip
+# ---------------------------------------------------------------------------
+
+
+async def test_upload_video_creates_asset_with_s3_key(
+    client: AsyncClient, auth_headers: dict
+) -> None:
+    """Upload a video file → S3 key set, telegram_file_id is None (videos skip Telegram)."""
+    fake_video = b"\x00\x00\x00\x18ftypmp42" + b"\x00" * 100
+    files = {"file": ("clip.mp4", io.BytesIO(fake_video), "video/mp4")}
+    data = {"kind": "video"}
+
+    resp = await client.post("/api/media", data=data, files=files, headers=auth_headers)
+
+    assert resp.status_code == 201
+    body = resp.json()
+    assert body["kind"] == "video"
+    assert body["mime"] == "video/mp4"
+    assert body["telegram_file_id"] is None
+    assert body["storage_path"] is not None
+    assert body["storage_path"].startswith("video/")
+    assert body["storage_path"].endswith(".mp4")
+    assert body["id"] is not None
+
+
+async def test_upload_video_above_audio_limit_passes(
+    client: AsyncClient, auth_headers: dict
+) -> None:
+    """Video above the 50 MB audio cap is accepted (video cap is 250 MB)."""
+    data_bytes = b"x" * (50 * 1024 * 1024 + 1)
+    files = {"file": ("big.mp4", io.BytesIO(data_bytes), "video/mp4")}
+    resp = await client.post(
+        "/api/media", data={"kind": "video"}, files=files, headers=auth_headers
+    )
+    assert resp.status_code == 201
+
+
+async def test_upload_video_over_250mb_returns_413(client: AsyncClient, auth_headers: dict) -> None:
+    """Upload of a 250 MB + 1 byte video is rejected with 413."""
+    data_bytes = b"x" * (250 * 1024 * 1024 + 1)
+    files = {"file": ("toobig.mp4", io.BytesIO(data_bytes), "video/mp4")}
+    resp = await client.post(
+        "/api/media", data={"kind": "video"}, files=files, headers=auth_headers
+    )
+    assert resp.status_code == 413
+    assert "250 MB" in resp.json()["detail"]
+
+
+async def test_upload_video_wrong_mime_returns_422(client: AsyncClient, auth_headers: dict) -> None:
+    """Upload with a non-video MIME type for kind=video is rejected with 422."""
+    files = {"file": ("trick.mp4", io.BytesIO(b"fake"), "application/octet-stream")}
+    resp = await client.post(
+        "/api/media", data={"kind": "video"}, files=files, headers=auth_headers
+    )
+    assert resp.status_code == 422
+    assert "video/" in resp.json()["detail"]
 
 
 # ---------------------------------------------------------------------------

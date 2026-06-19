@@ -84,9 +84,12 @@ async def upload_media(
 ) -> object:
     """Upload an audio, image, or video file; persist to S3 and capture a Telegram file_id."""
     config = request.app.state.config
-    max_bytes: int = (
-        config.media_max_image_bytes if kind == "image" else config.media_max_audio_bytes
-    )
+    if kind == "image":
+        max_bytes: int = config.media_max_image_bytes
+    elif kind == "video":
+        max_bytes = config.media_max_video_bytes
+    else:
+        max_bytes = config.media_max_audio_bytes
     limit_mb = max_bytes // (1024 * 1024)
     if file.size is not None and file.size > max_bytes:
         raise HTTPException(status_code=413, detail=f"File too large (max {limit_mb} MB)")
@@ -96,6 +99,10 @@ async def upload_media(
     filename = file.filename or f"upload.{kind}"
     _default_mime = {"audio": "audio/mpeg", "image": "image/jpeg", "video": "video/mp4"}
     mime = file.content_type or _default_mime.get(kind, "application/octet-stream")
+    if kind == "video" and not mime.startswith("video/"):
+        raise HTTPException(
+            status_code=422, detail=f"Unsupported MIME type {mime!r} for video; expected video/*"
+        )
     try:
         return await service.upload(data, filename, kind, mime, current_user["id"])
     except MediaAssetError as exc:
