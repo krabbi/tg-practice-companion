@@ -238,7 +238,7 @@ async def test_start_scheduler_registers_tick_with_correct_options(config) -> No
 
 @pytest.mark.asyncio
 async def test_morning_analysis_dispatched_as_separate_job(seeded_session, config) -> None:
-    """At _MORNING_BLOCK_HOUR:00 local time, tick dispatches morning_analysis as a
+    """At _MORNING_BLOCK_HOUR:00 local time, tick dispatches a per-user morning_analysis
     one-shot APScheduler job — never awaited inline.
     """
     factory = seeded_session
@@ -248,12 +248,12 @@ async def test_morning_analysis_dispatched_as_separate_job(seeded_session, confi
     mock_scheduler = MagicMock()
     await run_tick(factory, config, utc_dt, scheduler=mock_scheduler)
 
-    # add_job must have been called with id="morning_analysis"
+    # add_job must have been called once with a per-user id "morning_{user_id}_{date}"
     mock_scheduler.add_job.assert_called_once()
     call_kwargs = mock_scheduler.add_job.call_args
-    # id is passed as a keyword argument
-    assert call_kwargs.kwargs.get("id") == "morning_analysis" or (
-        len(call_kwargs.args) > 3 and call_kwargs.args[3] == "morning_analysis"
+    job_id = call_kwargs.kwargs.get("id", "")
+    assert job_id.startswith("morning_123456789_"), (
+        f"Expected per-user job id starting with 'morning_123456789_', got {job_id!r}"
     )
 
 

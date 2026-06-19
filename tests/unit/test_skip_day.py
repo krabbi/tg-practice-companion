@@ -64,7 +64,7 @@ async def run_tick_with_user(utc_dt: datetime, user: User) -> MagicMock:
     """Run a tick and return the delivery_service mock."""
     mock_bot = MagicMock()
     mock_user_repo = MagicMock()
-    mock_user_repo.get_first = AsyncMock(return_value=user)
+    mock_user_repo.list_all = AsyncMock(return_value=[user])
 
     mock_practice_repo = MagicMock()
     mock_send_repo = MagicMock()

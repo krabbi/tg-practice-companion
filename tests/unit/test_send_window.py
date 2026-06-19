@@ -68,7 +68,7 @@ async def run_tick_at(utc_dt: datetime, practice: Practice, config: Config) -> M
     mock_bot.send_message = AsyncMock()
 
     mock_user_repo = MagicMock()
-    mock_user_repo.get_first = AsyncMock(return_value=user)
+    mock_user_repo.list_all = AsyncMock(return_value=[user])
 
     mock_practice_repo = MagicMock()
     mock_send_repo = MagicMock()

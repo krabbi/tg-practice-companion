@@ -196,13 +196,16 @@ async def test_morning_block_compose_order(morning_factory, morning_config) -> N
 
 @pytest.mark.asyncio
 async def test_morning_analysis_dispatched_off_tick(morning_factory, morning_config) -> None:
-    """Analysis is dispatched as a separate APScheduler job, never awaited in tick."""
+    """Analysis is dispatched as a per-user APScheduler job, never awaited in tick."""
     utc_dt = datetime(2026, 6, 10, 6, 0, tzinfo=UTC)
 
     _, scheduler = await run_morning_tick(morning_factory, morning_config, utc_dt)
 
     scheduler.add_job.assert_called_once()
-    assert scheduler.add_job.call_args.kwargs.get("id") == "morning_analysis"
+    job_id = scheduler.add_job.call_args.kwargs.get("id", "")
+    assert job_id.startswith("morning_123456789_"), (
+        f"Expected per-user job id starting with 'morning_123456789_', got {job_id!r}"
+    )
 
 
 @pytest.mark.asyncio

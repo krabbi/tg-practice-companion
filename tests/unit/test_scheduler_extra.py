@@ -74,7 +74,7 @@ def make_practice() -> Practice:
 def make_session_factory(user: User | None = None, deliver_practices: bool = True) -> tuple:
     """Return (session_factory, mock repos) wired up for a single tick call."""
     mock_user_repo = MagicMock()
-    mock_user_repo.get_first = AsyncMock(return_value=user)
+    mock_user_repo.list_all = AsyncMock(return_value=[user] if user is not None else [])
 
     mock_practice_repo = MagicMock()
     mock_send_repo = MagicMock()
@@ -267,9 +267,9 @@ async def test_housekeeping_prunes_and_commits() -> None:
 
 @pytest.mark.asyncio
 async def test_run_morning_analysis_skips_when_no_user() -> None:
-    """run_morning_analysis returns early (no send) when no user exists in DB."""
+    """run_morning_analysis returns early (no send) when user_id is not found in DB."""
     mock_user_repo = MagicMock()
-    mock_user_repo.get_first = AsyncMock(return_value=None)
+    mock_user_repo.get_by_telegram_id = AsyncMock(return_value=None)
 
     mock_session = MagicMock()
     mock_session.__aenter__ = AsyncMock(return_value=mock_session)
@@ -281,7 +281,7 @@ async def test_run_morning_analysis_skips_when_no_user() -> None:
     config = make_config()
 
     with patch("bot.scheduler.UserRepository", return_value=mock_user_repo):
-        await run_morning_analysis(mock_bot, mock_factory, config)
+        await run_morning_analysis(mock_bot, mock_factory, config, 123456789)
 
     mock_bot.send_message.assert_not_awaited()
 
@@ -293,7 +293,7 @@ async def test_run_morning_analysis_sends_message_to_user() -> None:
 
     user = make_user(timezone="UTC")
     mock_user_repo = MagicMock()
-    mock_user_repo.get_first = AsyncMock(return_value=user)
+    mock_user_repo.get_by_telegram_id = AsyncMock(return_value=user)
 
     mock_session = MagicMock()
     mock_session.__aenter__ = AsyncMock(return_value=mock_session)
@@ -325,7 +325,7 @@ async def test_run_morning_analysis_sends_message_to_user() -> None:
         patch("bot.scheduler.LlmClient"),
         patch("bot.scheduler.UsageService"),
     ):
-        await run_morning_analysis(mock_bot, mock_factory, config)
+        await run_morning_analysis(mock_bot, mock_factory, config, user.telegram_id)
 
     mock_analysis_service.build.assert_awaited_once()
     mock_bot.send_message.assert_awaited_once_with(user.telegram_id, "Great job yesterday!")
@@ -336,7 +336,7 @@ async def test_run_morning_analysis_invalid_timezone_returns_early() -> None:
     """run_morning_analysis logs a warning and returns early for invalid timezone."""
     user = make_user(timezone="Invalid/Zone")
     mock_user_repo = MagicMock()
-    mock_user_repo.get_first = AsyncMock(return_value=user)
+    mock_user_repo.get_by_telegram_id = AsyncMock(return_value=user)
 
     mock_session = MagicMock()
     mock_session.__aenter__ = AsyncMock(return_value=mock_session)
@@ -348,6 +348,6 @@ async def test_run_morning_analysis_invalid_timezone_returns_early() -> None:
     config = make_config()
 
     with patch("bot.scheduler.UserRepository", return_value=mock_user_repo):
-        await run_morning_analysis(mock_bot, mock_factory, config)
+        await run_morning_analysis(mock_bot, mock_factory, config, user.telegram_id)
 
     mock_bot.send_message.assert_not_awaited()

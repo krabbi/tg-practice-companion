@@ -372,15 +372,17 @@ The journal catch-all carries `StateFilter(None)` so it yields whenever an FSM s
 
 - `max_instances=1`, `coalesce=True`: a slow tick can never overlap itself; a missed minute collapses into one re-evaluation (no catch-up — spec-correct per README).
 - Reads the DB every run — nothing is materialized at boot. Data changes (new practice rows, timezone edits) take effect on the next minute without restart (AC-4, AC-18).
+- **Per-user iteration:** the tick calls `user_repo.list_all()` and processes every registered user in a single session. Each user is evaluated in their own timezone, send-window, `skip_until`, and blessing-rotation state. One user's failure (bad timezone, send error, unexpected exception) is caught by a per-user `try/except`, logged, and the loop continues with the next user. Tick cost is O(users); heavy LLM work stays off-tick (dispatched as one-shot jobs), so this is acceptable for the expected small number of users (tens, not thousands).
 - Flow per tick:
-  1. `now_utc = datetime.now(UTC)` → resolve user's local timezone → `local_now`.
-  2. If `local_now.hour == _MORNING_BLOCK_HOUR` and `minute == 0`: dispatch `run_morning_analysis` as a one-shot APScheduler job (before the send-window check, so the analysis always fires regardless of send-window reconfiguration).
-  3. Short-circuit if outside the send window `[send_window_start, send_window_end)`.
-  4. Short-circuit if `user.skip_until >= local_now.date()` (AC-5).
-  5. If `local_now.hour == _MORNING_BLOCK_HOUR` and `minute == 0` and `user.last_blessing_date != today`: call `BlessingService.for_date(today)` → if a blessing is found, set `user.last_blessing_date = today`, **commit** (claim before send), then `bot.send_message(blessing.text)`.
-  6. `practice_service.due_now(local_now)` → list of due practices.
-  7. Sort due practices with `compose()` (ascending `sort_order`).
-  8. For each practice: compute `slot_key = "YYYY-MM-DDTHH:MM"` → apply backward-tz-jump guard → `practice_send_repository.try_claim(...)` (insert-or-skip on unique index) → if claimed, **first commit** (persists the claim), then branch on `content_type`:
+  1. `now_utc = datetime.now(UTC)` → `user_repo.list_all()` → for each user:
+  2. Resolve user's local timezone (`user.timezone or "UTC"`) → `local_now`. If the timezone string is invalid, log a warning and skip to the next user.
+  3. If `local_now.hour == _MORNING_BLOCK_HOUR` and `minute == 0`: dispatch a per-user `run_morning_analysis` one-shot APScheduler job with `id = f"morning_{user.telegram_id}_{local_now.date()}"` (before the send-window check, so the analysis always fires regardless of send-window reconfiguration; the per-user id prevents `replace_existing=True` from clobbering another user's analysis job).
+  4. Short-circuit (continue to next user) if outside the send window `[send_window_start, send_window_end)`.
+  5. Short-circuit if `user.skip_until >= local_now.date()` (AC-5).
+  6. If `local_now.hour == _MORNING_BLOCK_HOUR` and `minute == 0` and `user.last_blessing_date != today`: call `BlessingService.for_date(user_id, today)` → if a blessing is found, set `user.last_blessing_date = today`, **commit** (claim before send), then `bot.send_message(blessing.text)`.
+  7. `practice_service.due_now(user_id, local_now)` → list of due practices.
+  8. Sort due practices with `compose()` (ascending `sort_order`).
+  9. For each practice: compute `slot_key = "YYYY-MM-DDTHH:MM"` → apply backward-tz-jump guard → `practice_send_repository.try_claim(...)` (insert-or-skip on unique index) → if claimed, **first commit** (persists the claim), then branch on `content_type`:
      - `want`: call `WantListService.random_active(user_id)` — if an undone item exists, send it via `bot.send_message`; if the list is empty, the slot is claimed silently.
      - `good_deeds`: send the evening capture question via `bot.send_message`, write a `pending_prompt` row with `kind=good_deeds` (via flush), then **second commit** (persists the prompt).
      - `motivational_image`: call `ImageRepository.random_active()` — if an active image exists, send it via `bot.send_photo`; if the pool is empty, the slot is claimed silently.
@@ -398,7 +400,7 @@ Before claiming a slot, the tick converts `user.tz_changed_at` (UTC) into the cu
 
 At `_MORNING_BLOCK_HOUR` (06:00) local time, the tick fires three sequential steps:
 
-1. **Analysis dispatch (before send-window check):** `run_morning_analysis` is enqueued as a separate one-shot APScheduler job (`max_instances=1`, `replace_existing=True`). The job is dispatched before the send-window guard so the AI analysis always fires even if the send window is reconfigured to start after 06:00. The job opens its own session, resolves yesterday's date in the user's local timezone, builds `AnalysisService`, and calls `AnalysisService.build(user_id, analysis_date, lang)`. The service is idempotent per `(user_id, analysis_date)` so concurrent dispatches are safe. After `build` returns, the job sends `result.message` via `bot.send_message`; send failures are logged but do not raise (the analysis row is already persisted).
+1. **Analysis dispatch (before send-window check):** one `run_morning_analysis` job is enqueued per user as a separate one-shot APScheduler job (`max_instances=1`, `replace_existing=True`). Job id format: `f"morning_{user.telegram_id}_{local_now.date()}"` — ensures each user's job is independent and idempotent. The job is dispatched before the send-window guard so the AI analysis always fires even if the send window is reconfigured to start after 06:00. The job opens its own session, fetches the user by `telegram_id`, resolves yesterday's date in the user's local timezone, builds `AnalysisService`, and calls `AnalysisService.build(user_id, analysis_date, lang)`. The service is idempotent per `(user_id, analysis_date)` so concurrent dispatches are safe. After `build` returns, the job sends `result.message` via `bot.send_message`; send failures are logged but do not raise (the analysis row is already persisted).
 
 2. **Blessing rotation (after send-window check, before practice loop):** `BlessingService.for_date(today)` selects the active blessing using `today.toordinal() % len(active_blessings)`, advancing round-robin through blessings sorted by `rotation_order`. Idempotency is enforced by `user.last_blessing_date`: the tick only sends a blessing when `last_blessing_date != today`. The claim (`user.last_blessing_date = today`) is committed **before** `bot.send_message` so a bot restart at :00 never double-sends (consistent with the practice claim-before-send pattern). Send failures are logged and do not un-claim the date.
 
