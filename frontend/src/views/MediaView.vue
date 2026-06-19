@@ -282,6 +282,7 @@ onMounted(loadAssets)
             </Badge>
             <span class="card-date">{{ formatDate(a.created_at) }}</span>
           </div>
+          <div class="card-filename">{{ a.original_filename ?? '—' }}</div>
           <code class="asset-id small">{{ a.id }}</code>
           <div class="card-actions">
             <Button variant="secondary" size="sm" @click="copyId(a.id)">Копировать</Button>
@@ -330,6 +331,7 @@ onMounted(loadAssets)
           <thead>
             <tr>
               <th>Тип</th>
+              <th>Имя</th>
               <th>MIME</th>
               <th>UUID</th>
               <th>Дата</th>
@@ -344,6 +346,7 @@ onMounted(loadAssets)
                     {{ a.kind === 'image' ? '🖼 Изобр.' : '🔊 Аудио' }}
                   </span>
                 </td>
+                <td class="filename-cell">{{ a.original_filename ?? '—' }}</td>
                 <td class="mime-cell">{{ a.mime ?? '—' }}</td>
                 <td>
                   <div class="uuid-cell">
@@ -368,7 +371,7 @@ onMounted(loadAssets)
                 </td>
               </tr>
               <tr v-if="expandedIds.has(a.id)" class="preview-row">
-                <td colspan="5">
+                <td colspan="6">
                   <div class="preview-cell">
                     <p v-if="previewLoading[a.id]" class="hint">Загрузка...</p>
                     <p v-else-if="previewErrors[a.id]" class="error-msg">{{ previewErrors[a.id] }}</p>
@@ -423,7 +426,7 @@ onMounted(loadAssets)
           <select v-model="motivAssetId" required>
             <option value="" disabled>— выберите файл —</option>
             <option v-for="a in imageAssets" :key="a.id" :value="a.id">
-              {{ a.id }} ({{ a.mime ?? a.kind }})
+              {{ a.original_filename ?? `${a.id} (${a.mime ?? a.kind})` }}
             </option>
           </select>
         </Field>
@@ -664,6 +667,20 @@ onMounted(loadAssets)
 
 .kind-image { background: var(--color-info-bg); color: var(--color-link); }
 .kind-audio { background: var(--color-warning-bg); color: var(--color-warning); }
+
+.filename-cell {
+  font-size: var(--text-xs);
+  max-width: 12rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.card-filename {
+  font-size: var(--text-sm);
+  font-weight: var(--font-weight-medium);
+  word-break: break-all;
+}
 
 .mime-cell { color: var(--color-hint); font-size: var(--text-xs); }
 

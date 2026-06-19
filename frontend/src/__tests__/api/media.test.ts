@@ -56,6 +56,7 @@ const ASSET = {
   storage_path: '/uploads/img.jpg',
   telegram_file_id: null,
   mime: 'image/jpeg',
+  original_filename: 'my-photo.jpg',
   created_at: '2024-01-01T00:00:00',
   updated_at: '2024-01-01T00:00:00',
 }

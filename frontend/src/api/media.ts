@@ -8,6 +8,7 @@ export interface MediaAsset {
   storage_path: string | null
   telegram_file_id: string | null
   mime: string | null
+  original_filename: string | null
   created_at: string
   updated_at: string
 }
