@@ -69,7 +69,8 @@ describe('WantsView', () => {
     const wrapper = mount(WantsView)
     await flushPromises()
 
-    await wrapper.find('button.btn-primary').trigger('click')
+    const addBtn = wrapper.findAll('button').find((b) => b.text().includes('Добавить'))
+    await addBtn!.trigger('click')
 
     expect(wrapper.text()).toContain('Новое желание')
     expect(wrapper.find('textarea').exists()).toBe(true)
@@ -80,7 +81,8 @@ describe('WantsView', () => {
     const wrapper = mount(WantsView)
     await flushPromises()
 
-    await wrapper.find('button.btn-primary').trigger('click')
+    const addBtn = wrapper.findAll('button').find((b) => b.text().includes('Добавить'))
+    await addBtn!.trigger('click')
     await wrapper.find('form').trigger('submit')
 
     expect(wrapper.text()).toContain('Текст обязателен')

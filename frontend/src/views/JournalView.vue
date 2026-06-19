@@ -3,6 +3,11 @@ import { ref, onMounted } from 'vue'
 import { ApiError } from '@/api/client'
 import { listJournal, type JournalEntry, type JournalListParams } from '@/api/journal'
 import { listPractices, type Practice } from '@/api/practices'
+import Card from '@/components/ui/Card.vue'
+import Badge from '@/components/ui/Badge.vue'
+import Button from '@/components/ui/Button.vue'
+import EmptyState from '@/components/ui/EmptyState.vue'
+import Spinner from '@/components/ui/Spinner.vue'
 
 const PAGE_SIZE = 20
 
@@ -97,8 +102,8 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div class="view">
-    <h2>Дневник</h2>
+  <section class="view">
+    <h2 class="view-title">Дневник</h2>
 
     <!-- Filters -->
     <div class="filters">
@@ -118,18 +123,43 @@ onMounted(async () => {
         </select>
       </div>
       <div class="filter-actions">
-        <button class="btn btn-primary btn-sm" @click="applyFilters">Применить</button>
-        <button class="btn btn-secondary btn-sm" @click="resetFilters">Сбросить</button>
+        <Button variant="primary" size="sm" @click="applyFilters">Применить</Button>
+        <Button variant="secondary" size="sm" @click="resetFilters">Сбросить</Button>
       </div>
     </div>
 
     <p v-if="listError" class="error-msg">{{ listError }}</p>
-    <p v-if="loading" class="hint">Загрузка...</p>
 
-    <div v-if="!loading && entries.length === 0 && !listError" class="hint">
-      Записей не найдено.
+    <Spinner v-if="loading" pose="meditating" label="Загрузка записей…" />
+
+    <EmptyState
+      v-else-if="!loading && entries.length === 0 && !listError"
+      pose="lounging"
+      label="Записей не найдено."
+    />
+
+    <!-- Card list (mobile) -->
+    <div v-if="entries.length > 0" class="card-list">
+      <Card
+        v-for="entry in entries"
+        :key="entry.id"
+        :interactive="true"
+        @click="openDetail(entry)"
+      >
+        <div class="card-row">
+          <span class="card-date">{{ formatDate(entry.created_at) }}</span>
+          <Badge variant="info">{{ entry.source === 'voice' ? 'Голос' : 'Текст' }}</Badge>
+          <template v-if="entry.self_assessment !== null">
+            <span>{{ entry.self_assessment.leads_to_goals ? '✅' : '❌' }}</span>
+          </template>
+          <span v-else class="card-hint">—</span>
+        </div>
+        <div v-if="entry.practice_name" class="card-practice">{{ entry.practice_name }}</div>
+        <p class="card-text">{{ truncate(entry.text) }}</p>
+      </Card>
     </div>
 
+    <!-- Table (wide screens) -->
     <div v-if="entries.length > 0" class="table-wrap">
       <table class="journal-table">
         <thead>
@@ -165,17 +195,18 @@ onMounted(async () => {
 
     <!-- Pagination -->
     <div v-if="total > PAGE_SIZE" class="pagination">
-      <button class="btn btn-secondary btn-sm" :disabled="page === 1" @click="prevPage">
+      <Button variant="secondary" size="sm" :disabled="page === 1" @click="prevPage">
         ← Назад
-      </button>
+      </Button>
       <span class="page-info">Страница {{ page }} / {{ totalPages() }}</span>
-      <button
-        class="btn btn-secondary btn-sm"
+      <Button
+        variant="secondary"
+        size="sm"
         :disabled="page * PAGE_SIZE >= total"
         @click="nextPage"
       >
         Вперёд →
-      </button>
+      </Button>
     </div>
 
     <!-- Detail modal -->
@@ -209,218 +240,209 @@ onMounted(async () => {
         </div>
       </div>
     </div>
-  </div>
+  </section>
 </template>
 
 <style scoped>
-h2 {
-  margin-bottom: 1rem;
-}
-
-.hint {
-  color: var(--tg-theme-hint-color, #888);
-  font-size: 0.9rem;
-  margin: 1rem 0;
+.view-title {
+  font-size: var(--text-lg);
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: -0.02em;
+  margin-bottom: var(--space-4);
 }
 
 .error-msg {
-  color: #c0392b;
-  background: #fdecea;
-  border-radius: 4px;
-  padding: 0.5rem 0.75rem;
-  margin-bottom: 0.75rem;
-  font-size: 0.875rem;
+  color: var(--color-danger);
+  background: var(--color-danger-bg);
+  border-radius: var(--radius-md);
+  padding: var(--space-2) var(--space-3);
+  margin-bottom: var(--space-3);
+  font-size: var(--text-sm);
 }
 
 .filters {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.75rem;
+  gap: var(--space-3);
   align-items: flex-end;
-  margin-bottom: 1rem;
-  padding: 0.75rem;
-  background: var(--tg-theme-secondary-bg-color, #f5f5f5);
-  border-radius: 8px;
+  margin-bottom: var(--space-4);
+  padding: var(--space-3);
+  background: var(--color-surface);
+  border-radius: var(--radius-lg);
 }
 
 .filter-field {
   display: flex;
   flex-direction: column;
-  gap: 0.2rem;
+  gap: var(--space-1);
   min-width: 130px;
 }
 
 .filter-field label {
-  font-size: 0.75rem;
-  font-weight: 500;
-  color: var(--tg-theme-hint-color, #666);
+  font-size: var(--text-xs);
+  font-weight: var(--font-weight-medium);
+  color: var(--color-hint);
 }
 
 .filter-field input,
 .filter-field select {
-  border: 1px solid var(--tg-theme-hint-color, #ccc);
-  border-radius: 6px;
-  padding: 0.4rem 0.5rem;
-  font-size: 0.85rem;
-  background: var(--tg-theme-bg-color, #fff);
-  color: var(--tg-theme-text-color, #000);
+  border: 1px solid color-mix(in srgb, var(--color-hint) 40%, transparent);
+  border-radius: var(--radius-md);
+  padding: var(--space-2) var(--space-3);
+  font-size: var(--text-sm);
+  background: var(--color-bg);
+  color: var(--color-text);
   box-sizing: border-box;
+  font-family: var(--font-family);
+  min-height: var(--tap-target);
 }
 
 .filter-actions {
   display: flex;
-  gap: 0.5rem;
+  gap: var(--space-2);
   align-items: flex-end;
 }
 
-.table-wrap {
-  overflow-x: auto;
+/* Cards */
+.card-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
 }
 
+.card-date {
+  font-size: var(--text-xs);
+  color: var(--color-hint);
+  font-variant-numeric: tabular-nums;
+}
+
+.card-practice {
+  font-size: var(--text-sm);
+  font-weight: var(--font-weight-medium);
+  color: var(--color-hint);
+}
+
+.card-text {
+  font-size: var(--text-base);
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.card-hint { color: var(--color-hint); font-size: var(--text-sm); }
+
+/* Table */
 .journal-table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 0.875rem;
+  font-size: var(--text-sm);
 }
 
 .journal-table th,
 .journal-table td {
   text-align: left;
-  padding: 0.5rem 0.75rem;
-  border-bottom: 1px solid var(--tg-theme-hint-color, #ddd);
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid color-mix(in srgb, var(--color-hint) 20%, transparent);
   vertical-align: top;
 }
 
 .journal-table th {
-  font-weight: 600;
-  background: var(--tg-theme-secondary-bg-color, #f5f5f5);
+  font-weight: var(--font-weight-semibold);
+  background: var(--color-surface);
+  color: var(--color-hint);
+  font-size: var(--text-xs);
 }
 
-.clickable-row {
-  cursor: pointer;
-}
+.clickable-row { cursor: pointer; }
+.clickable-row:hover { background: var(--color-surface); }
 
-.clickable-row:hover {
-  background: var(--tg-theme-secondary-bg-color, #f9f9f9);
-}
+.col-date { white-space: nowrap; font-size: var(--text-xs); font-variant-numeric: tabular-nums; }
+.col-text { max-width: 280px; word-break: break-word; }
+.col-assess { text-align: center; }
 
-.col-date {
-  white-space: nowrap;
-  font-size: 0.8rem;
-}
-
-.col-text {
-  max-width: 280px;
-  word-break: break-word;
-}
-
-.col-assess {
-  text-align: center;
-  font-size: 1rem;
-}
-
+/* Pagination */
 .pagination {
   display: flex;
   align-items: center;
-  gap: 1rem;
-  margin-top: 1rem;
+  gap: var(--space-4);
+  margin-top: var(--space-4);
   justify-content: center;
 }
 
 .page-info {
-  font-size: 0.875rem;
-  color: var(--tg-theme-hint-color, #666);
+  font-size: var(--text-sm);
+  color: var(--color-hint);
+  font-variant-numeric: tabular-nums;
 }
 
-.btn {
-  border: none;
-  border-radius: 6px;
-  padding: 0.5rem 1rem;
-  cursor: pointer;
-  font-size: 0.875rem;
-  font-weight: 500;
-  transition: opacity 0.15s;
-}
-
-.btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.btn-sm {
-  padding: 0.3rem 0.7rem;
-  font-size: 0.8rem;
-}
-
-.btn-primary {
-  background: var(--tg-theme-button-color, #2481cc);
-  color: var(--tg-theme-button-text-color, #fff);
-}
-
-.btn-secondary {
-  background: var(--tg-theme-secondary-bg-color, #e0e0e0);
-  color: var(--tg-theme-text-color, #333);
-}
-
-.btn-close {
-  background: none;
-  border: none;
-  font-size: 1.1rem;
-  cursor: pointer;
-  color: var(--tg-theme-hint-color, #888);
-  padding: 0.25rem;
-  line-height: 1;
-}
-
+/* Modal */
 .modal-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.45);
+  background: rgba(15, 15, 15, 0.45);
   display: flex;
   align-items: flex-start;
   justify-content: center;
-  padding: 1rem;
+  padding: var(--space-4);
   overflow-y: auto;
-  z-index: 100;
+  z-index: var(--z-modal);
 }
 
 .modal {
-  background: var(--tg-theme-bg-color, #fff);
-  border-radius: 12px;
+  background: var(--color-bg);
+  border-radius: var(--radius-lg);
   width: 100%;
   max-width: 520px;
-  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.18);
-  margin-top: 0.5rem;
+  box-shadow: var(--shadow-lg);
+  margin-top: var(--space-2);
 }
 
 .modal-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 1rem 1.25rem 0.75rem;
-  border-bottom: 1px solid var(--tg-theme-hint-color, #ddd);
+  padding: var(--space-4) var(--space-4) var(--space-3);
+  border-bottom: 1px solid color-mix(in srgb, var(--color-hint) 20%, transparent);
 }
 
 .modal-header h3 {
   margin: 0;
-  font-size: 1rem;
+  font-size: var(--text-md);
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: -0.01em;
 }
 
-.modal-body {
-  padding: 1rem 1.25rem 1.25rem;
+.btn-close {
+  background: none;
+  border: none;
+  font-size: var(--text-md);
+  cursor: pointer;
+  color: var(--color-hint);
+  padding: var(--space-1);
+  line-height: 1;
+  min-height: var(--tap-target);
+  min-width: var(--tap-target);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-sm);
 }
+
+.modal-body { padding: var(--space-4); }
 
 .detail-list {
   display: grid;
   grid-template-columns: auto 1fr;
-  gap: 0.4rem 1rem;
+  gap: var(--space-1) var(--space-4);
   margin: 0;
-  font-size: 0.875rem;
+  font-size: var(--text-sm);
 }
 
 .detail-list dt {
-  font-weight: 600;
-  color: var(--tg-theme-hint-color, #666);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-hint);
   white-space: nowrap;
 }
 
@@ -429,7 +451,5 @@ h2 {
   word-break: break-word;
 }
 
-.entry-text {
-  white-space: pre-wrap;
-}
+.entry-text { white-space: pre-wrap; }
 </style>

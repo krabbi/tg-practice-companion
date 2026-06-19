@@ -2,6 +2,12 @@
 import { ref, reactive, onMounted } from 'vue'
 import { ApiError } from '@/api/client'
 import { listWants, createWant, updateWant, deleteWant, type Want } from '@/api/wants'
+import Card from '@/components/ui/Card.vue'
+import Badge from '@/components/ui/Badge.vue'
+import Button from '@/components/ui/Button.vue'
+import Field from '@/components/ui/Field.vue'
+import EmptyState from '@/components/ui/EmptyState.vue'
+import Spinner from '@/components/ui/Spinner.vue'
 
 interface FormData {
   text: string
@@ -110,19 +116,44 @@ onMounted(loadWants)
 </script>
 
 <template>
-  <div class="view">
-    <div class="view-header">
-      <h2>Список «Хочу»</h2>
-      <button class="btn btn-primary" @click="openCreate">+ Добавить</button>
-    </div>
+  <section class="view">
+    <header class="view-header">
+      <h2 class="view-title">Список «Хочу»</h2>
+      <Button variant="primary" size="sm" @click="openCreate">+ Добавить</Button>
+    </header>
 
     <p v-if="listError" class="error-msg">{{ listError }}</p>
-    <p v-if="loading" class="hint">Загрузка...</p>
 
-    <div v-if="!loading && wants.length === 0 && !listError" class="hint">
-      Список пуст. Добавьте первое желание.
+    <Spinner v-if="loading" pose="meditating" label="Загрузка…" />
+
+    <EmptyState
+      v-else-if="!loading && wants.length === 0 && !listError"
+      pose="lounging"
+      label="Список пуст. Добавьте первое желание."
+    />
+
+    <!-- Card list (mobile) -->
+    <div v-if="wants.length > 0" class="card-list">
+      <Card v-for="w in wants" :key="w.id" :class="{ 'card--done': w.done }">
+        <div class="card-main">
+          <p class="card-text" :class="{ 'card-text--done': w.done }">{{ w.text }}</p>
+          <Badge :variant="w.done ? 'success' : 'inactive'">
+            {{ w.done ? 'Выполнено' : 'Не выполнено' }}
+          </Badge>
+        </div>
+        <div class="card-actions">
+          <Button
+            :variant="w.done ? 'secondary' : 'ghost'"
+            size="sm"
+            @click="toggleDone(w)"
+          >{{ w.done ? 'Вернуть' : 'Выполнено' }}</Button>
+          <Button variant="secondary" size="sm" @click="openEdit(w)">Изменить</Button>
+          <Button variant="danger" size="sm" @click="remove(w)">Удалить</Button>
+        </div>
+      </Card>
     </div>
 
+    <!-- Table (wide screens) -->
     <div v-if="wants.length > 0" class="table-wrap">
       <table class="wants-table">
         <thead>
@@ -164,22 +195,20 @@ onMounted(loadWants)
         <form class="item-form" @submit.prevent="submitForm">
           <p v-if="formError" class="error-msg">{{ formError }}</p>
 
-          <div class="field">
-            <label>Текст *</label>
+          <Field label="Текст *" :error="formErrors['text']">
             <textarea v-model="formData.text" rows="3" maxlength="1000"></textarea>
-            <span v-if="formErrors['text']" class="field-error">{{ formErrors['text'] }}</span>
-          </div>
+          </Field>
 
           <div class="form-actions">
-            <button type="button" class="btn btn-secondary" @click="closeForm">Отмена</button>
-            <button type="submit" class="btn btn-primary" :disabled="submitting">
+            <Button type="button" variant="secondary" @click="closeForm">Отмена</Button>
+            <Button type="submit" variant="primary" :disabled="submitting">
               {{ submitting ? 'Сохранение...' : editingId ? 'Сохранить' : 'Создать' }}
-            </button>
+            </Button>
           </div>
         </form>
       </div>
     </div>
-  </div>
+  </section>
 </template>
 
 <style scoped>
@@ -187,49 +216,71 @@ onMounted(loadWants)
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 1rem;
+  margin-bottom: var(--space-4);
 }
 
-.view-header h2 {
-  margin: 0;
-}
-
-.hint {
-  color: var(--tg-theme-hint-color, #888);
-  font-size: 0.9rem;
-  margin: 1rem 0;
+.view-title {
+  font-size: var(--text-lg);
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: -0.02em;
 }
 
 .error-msg {
-  color: #c0392b;
-  background: #fdecea;
-  border-radius: 4px;
-  padding: 0.5rem 0.75rem;
-  margin-bottom: 0.75rem;
-  font-size: 0.875rem;
+  color: var(--color-danger);
+  background: var(--color-danger-bg);
+  border-radius: var(--radius-md);
+  padding: var(--space-2) var(--space-3);
+  margin-bottom: var(--space-3);
+  font-size: var(--text-sm);
 }
 
-.table-wrap {
-  overflow-x: auto;
+/* Cards */
+.card-main {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-2);
 }
 
+.card-text {
+  flex: 1;
+  font-size: var(--text-base);
+  word-break: break-word;
+}
+
+.card-text--done {
+  text-decoration: line-through;
+  opacity: 0.6;
+}
+
+.card-actions {
+  display: flex;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  padding-top: var(--space-2);
+  border-top: 1px solid color-mix(in srgb, var(--color-hint) 15%, transparent);
+}
+
+/* Table */
 .wants-table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 0.875rem;
+  font-size: var(--text-sm);
 }
 
 .wants-table th,
 .wants-table td {
   text-align: left;
-  padding: 0.5rem 0.75rem;
-  border-bottom: 1px solid var(--tg-theme-hint-color, #ddd);
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid color-mix(in srgb, var(--color-hint) 20%, transparent);
   vertical-align: middle;
 }
 
 .wants-table th {
-  font-weight: 600;
-  background: var(--tg-theme-secondary-bg-color, #f5f5f5);
+  font-weight: var(--font-weight-semibold);
+  background: var(--color-surface);
+  color: var(--color-hint);
+  font-size: var(--text-xs);
 }
 
 .wants-table tr.done .text-cell {
@@ -237,146 +288,91 @@ onMounted(loadWants)
   opacity: 0.6;
 }
 
-.text-cell {
-  max-width: 300px;
-  word-break: break-word;
-}
-
-.actions {
-  display: flex;
-  gap: 0.4rem;
-  white-space: nowrap;
-}
+.text-cell { max-width: 300px; word-break: break-word; }
+.actions { display: flex; gap: var(--space-1); white-space: nowrap; }
 
 .btn {
   border: none;
-  border-radius: 6px;
-  padding: 0.5rem 1rem;
+  border-radius: var(--radius-md);
+  padding: 0 var(--space-3);
+  min-height: var(--tap-target);
   cursor: pointer;
-  font-size: 0.875rem;
-  font-weight: 500;
-  transition: opacity 0.15s;
+  font-size: var(--text-sm);
+  font-weight: var(--font-weight-medium);
+  transition: opacity var(--transition-fast);
+  font-family: var(--font-family);
 }
 
-.btn:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-
-.btn-sm {
-  padding: 0.25rem 0.6rem;
-  font-size: 0.8rem;
-}
-
-.btn-primary {
-  background: var(--tg-theme-button-color, #2481cc);
-  color: var(--tg-theme-button-text-color, #fff);
-}
-
-.btn-secondary {
-  background: var(--tg-theme-secondary-bg-color, #e0e0e0);
-  color: var(--tg-theme-text-color, #333);
-}
-
-.btn-danger {
-  background: #e74c3c;
-  color: #fff;
-}
-
-.btn-active {
-  background: #27ae60;
-  color: #fff;
-}
-
-.btn-inactive {
-  background: #bdc3c7;
-  color: #333;
-}
+.btn:disabled { opacity: 0.6; cursor: not-allowed; }
+.btn-sm { min-height: var(--tap-target); padding: 0 var(--space-2); font-size: var(--text-xs); }
+.btn-primary { background: var(--color-accent); color: var(--color-accent-text); }
+.btn-secondary { background: var(--color-surface); color: var(--color-text); }
+.btn-danger { background: var(--color-danger); color: #fff; }
+.btn-active { background: var(--color-success); color: #fff; }
+.btn-inactive { background: var(--color-inactive-bg); color: var(--color-inactive-text); }
 
 .btn-close {
   background: none;
   border: none;
-  font-size: 1.1rem;
+  font-size: var(--text-md);
   cursor: pointer;
-  color: var(--tg-theme-hint-color, #888);
-  padding: 0.25rem;
-  line-height: 1;
+  color: var(--color-hint);
+  min-height: var(--tap-target);
+  min-width: var(--tap-target);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-sm);
 }
 
+/* Modal */
 .modal-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.45);
+  background: rgba(15, 15, 15, 0.45);
   display: flex;
   align-items: flex-start;
   justify-content: center;
-  padding: 1rem;
+  padding: var(--space-4);
   overflow-y: auto;
-  z-index: 100;
+  z-index: var(--z-modal);
 }
 
 .modal {
-  background: var(--tg-theme-bg-color, #fff);
-  border-radius: 12px;
+  background: var(--color-bg);
+  border-radius: var(--radius-lg);
   width: 100%;
   max-width: 520px;
-  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.18);
-  margin-top: 0.5rem;
+  box-shadow: var(--shadow-lg);
+  margin-top: var(--space-2);
 }
 
 .modal-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 1rem 1.25rem 0.75rem;
-  border-bottom: 1px solid var(--tg-theme-hint-color, #ddd);
+  padding: var(--space-4) var(--space-4) var(--space-3);
+  border-bottom: 1px solid color-mix(in srgb, var(--color-hint) 20%, transparent);
 }
 
 .modal-header h3 {
   margin: 0;
-  font-size: 1rem;
+  font-size: var(--text-md);
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: -0.01em;
 }
 
 .item-form {
-  padding: 1rem 1.25rem 1.25rem;
+  padding: var(--space-4);
   display: flex;
   flex-direction: column;
-  gap: 0.75rem;
-}
-
-.field {
-  display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
-}
-
-.field label {
-  font-size: 0.8rem;
-  font-weight: 500;
-  color: var(--tg-theme-hint-color, #666);
-}
-
-.field textarea {
-  border: 1px solid var(--tg-theme-hint-color, #ccc);
-  border-radius: 6px;
-  padding: 0.5rem 0.6rem;
-  font-size: 0.875rem;
-  background: var(--tg-theme-secondary-bg-color, #fafafa);
-  color: var(--tg-theme-text-color, #000);
-  width: 100%;
-  box-sizing: border-box;
-  resize: vertical;
-}
-
-.field-error {
-  color: #c0392b;
-  font-size: 0.78rem;
+  gap: var(--space-3);
 }
 
 .form-actions {
   display: flex;
   justify-content: flex-end;
-  gap: 0.75rem;
-  padding-top: 0.5rem;
+  gap: var(--space-3);
+  padding-top: var(--space-2);
 }
 </style>

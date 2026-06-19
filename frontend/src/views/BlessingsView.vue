@@ -9,6 +9,12 @@ import {
   reorderBlessings,
   type Blessing,
 } from '@/api/blessings'
+import Card from '@/components/ui/Card.vue'
+import Badge from '@/components/ui/Badge.vue'
+import Button from '@/components/ui/Button.vue'
+import Field from '@/components/ui/Field.vue'
+import EmptyState from '@/components/ui/EmptyState.vue'
+import Spinner from '@/components/ui/Spinner.vue'
 
 interface FormData {
   text: string
@@ -136,19 +142,58 @@ onMounted(loadBlessings)
 </script>
 
 <template>
-  <div class="view">
-    <div class="view-header">
-      <h2>Утренние напутствия</h2>
-      <button class="btn btn-primary" @click="openCreate">+ Добавить</button>
-    </div>
+  <section class="view">
+    <header class="view-header">
+      <h2 class="view-title">Утренние напутствия</h2>
+      <Button variant="primary" size="sm" @click="openCreate">+ Добавить</Button>
+    </header>
 
     <p v-if="listError" class="error-msg">{{ listError }}</p>
-    <p v-if="loading" class="hint">Загрузка...</p>
 
-    <div v-if="!loading && blessings.length === 0 && !listError" class="hint">
-      Напутствия не найдены. Добавьте первое.
+    <Spinner v-if="loading" pose="meditating" label="Загрузка напутствий…" />
+
+    <EmptyState
+      v-else-if="!loading && blessings.length === 0 && !listError"
+      pose="lounging"
+      label="Напутствия не найдены. Добавьте первое."
+    />
+
+    <!-- Card list (mobile) -->
+    <div v-if="blessings.length > 0" class="card-list">
+      <Card
+        v-for="(b, idx) in blessings"
+        :key="b.id"
+        :class="{ 'card--inactive': !b.active }"
+      >
+        <div class="card-main">
+          <div class="order-controls-card">
+            <button
+              class="btn-order-card"
+              :disabled="idx === 0"
+              title="Переместить вверх"
+              @click="move(idx, -1)"
+            >▲</button>
+            <span class="order-num">{{ b.rotation_order }}</span>
+            <button
+              class="btn-order-card"
+              :disabled="idx === blessings.length - 1"
+              title="Переместить вниз"
+              @click="move(idx, 1)"
+            >▼</button>
+          </div>
+          <p class="card-text">{{ b.text }}</p>
+          <Badge :variant="b.active ? 'active' : 'inactive'">
+            {{ b.active ? 'Вкл' : 'Выкл' }}
+          </Badge>
+        </div>
+        <div class="card-actions">
+          <Button variant="secondary" size="sm" @click="openEdit(b)">Изменить</Button>
+          <Button variant="danger" size="sm" @click="remove(b)">Удалить</Button>
+        </div>
+      </Card>
     </div>
 
+    <!-- Table (wide screens) -->
     <div v-if="blessings.length > 0" class="table-wrap">
       <table class="blessings-table">
         <thead>
@@ -168,18 +213,14 @@ onMounted(loadBlessings)
                   :disabled="idx === 0"
                   title="Переместить вверх"
                   @click="move(idx, -1)"
-                >
-                  ▲
-                </button>
+                >▲</button>
                 <span class="order-num">{{ b.rotation_order }}</span>
                 <button
                   class="btn-order"
                   :disabled="idx === blessings.length - 1"
                   title="Переместить вниз"
                   @click="move(idx, 1)"
-                >
-                  ▼
-                </button>
+                >▼</button>
               </div>
             </td>
             <td class="text-cell">{{ b.text }}</td>
@@ -212,13 +253,11 @@ onMounted(loadBlessings)
         <form class="item-form" @submit.prevent="submitForm">
           <p v-if="formError" class="error-msg">{{ formError }}</p>
 
-          <div class="field">
-            <label>Текст *</label>
+          <Field label="Текст *" :error="formErrors['text']">
             <textarea v-model="formData.text" rows="3" maxlength="1000"></textarea>
-            <span v-if="formErrors['text']" class="field-error">{{ formErrors['text'] }}</span>
-          </div>
+          </Field>
 
-          <div class="field checkbox-field">
+          <div class="checkbox-field">
             <label>
               <input v-model="formData.active" type="checkbox" />
               Активно
@@ -226,15 +265,15 @@ onMounted(loadBlessings)
           </div>
 
           <div class="form-actions">
-            <button type="button" class="btn btn-secondary" @click="closeForm">Отмена</button>
-            <button type="submit" class="btn btn-primary" :disabled="submitting">
+            <Button type="button" variant="secondary" @click="closeForm">Отмена</Button>
+            <Button type="submit" variant="primary" :disabled="submitting">
               {{ submitting ? 'Сохранение...' : editingId ? 'Сохранить' : 'Создать' }}
-            </button>
+            </Button>
           </div>
         </form>
       </div>
     </div>
-  </div>
+  </section>
 </template>
 
 <style scoped>
@@ -242,81 +281,83 @@ onMounted(loadBlessings)
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 1rem;
+  margin-bottom: var(--space-4);
 }
 
-.view-header h2 {
-  margin: 0;
-}
-
-.hint {
-  color: var(--tg-theme-hint-color, #888);
-  font-size: 0.9rem;
-  margin: 1rem 0;
+.view-title {
+  font-size: var(--text-lg);
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: -0.02em;
 }
 
 .error-msg {
-  color: #c0392b;
-  background: #fdecea;
-  border-radius: 4px;
-  padding: 0.5rem 0.75rem;
-  margin-bottom: 0.75rem;
-  font-size: 0.875rem;
+  color: var(--color-danger);
+  background: var(--color-danger-bg);
+  border-radius: var(--radius-md);
+  padding: var(--space-2) var(--space-3);
+  margin-bottom: var(--space-3);
+  font-size: var(--text-sm);
 }
 
-.table-wrap {
-  overflow-x: auto;
+/* Card list */
+.card-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
 }
 
-.blessings-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 0.875rem;
+.card--inactive { opacity: 0.6; }
+
+.card-main {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
 }
 
-.blessings-table th,
-.blessings-table td {
-  text-align: left;
-  padding: 0.5rem 0.75rem;
-  border-bottom: 1px solid var(--tg-theme-hint-color, #ddd);
-  vertical-align: middle;
+.card-text {
+  flex: 1;
+  font-size: var(--text-base);
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
 }
 
-.blessings-table th {
-  font-weight: 600;
-  background: var(--tg-theme-secondary-bg-color, #f5f5f5);
-}
-
-.blessings-table tr.inactive {
-  opacity: 0.55;
-}
-
-.order-col {
-  width: 80px;
+.order-controls-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
 }
 
 .order-controls {
   display: flex;
   align-items: center;
-  gap: 0.3rem;
+  gap: var(--space-1);
 }
 
 .order-num {
   min-width: 1.5rem;
   text-align: center;
-  font-size: 0.8rem;
-  color: var(--tg-theme-hint-color, #666);
+  font-size: var(--text-xs);
+  color: var(--color-hint);
+  font-variant-numeric: tabular-nums;
 }
 
 .btn-order {
   background: none;
-  border: 1px solid var(--tg-theme-hint-color, #ccc);
-  border-radius: 4px;
+  border: 1px solid color-mix(in srgb, var(--color-hint) 40%, transparent);
+  border-radius: var(--radius-sm);
   cursor: pointer;
-  font-size: 0.7rem;
-  padding: 0.1rem 0.3rem;
+  font-size: var(--text-xs);
+  padding: var(--space-1) var(--space-2);
   line-height: 1;
-  color: var(--tg-theme-text-color, #333);
+  color: var(--color-text);
+  min-height: var(--tap-target);
+  min-width: var(--tap-target);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .btn-order:disabled {
@@ -324,160 +365,142 @@ onMounted(loadBlessings)
   cursor: not-allowed;
 }
 
-.text-cell {
-  max-width: 300px;
-  word-break: break-word;
+.card-actions {
+  display: flex;
+  gap: var(--space-2);
+  padding-top: var(--space-2);
+  border-top: 1px solid color-mix(in srgb, var(--color-hint) 15%, transparent);
 }
 
-.actions {
-  display: flex;
-  gap: 0.4rem;
-  white-space: nowrap;
+/* Table */
+.table-wrap { display: none; overflow-x: auto; }
+
+@media (min-width: 481px) {
+  .card-list { display: none; }
+  .table-wrap { display: block; }
 }
+
+.blessings-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--text-sm);
+}
+
+.blessings-table th,
+.blessings-table td {
+  text-align: left;
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid color-mix(in srgb, var(--color-hint) 20%, transparent);
+  vertical-align: middle;
+}
+
+.blessings-table th {
+  font-weight: var(--font-weight-semibold);
+  background: var(--color-surface);
+  color: var(--color-hint);
+  font-size: var(--text-xs);
+}
+
+.blessings-table tr.inactive { opacity: 0.55; }
+.order-col { width: 80px; }
+.text-cell { max-width: 300px; word-break: break-word; }
+.actions { display: flex; gap: var(--space-1); white-space: nowrap; }
 
 .btn {
   border: none;
-  border-radius: 6px;
-  padding: 0.5rem 1rem;
+  border-radius: var(--radius-md);
+  padding: 0 var(--space-3);
+  min-height: var(--tap-target);
   cursor: pointer;
-  font-size: 0.875rem;
-  font-weight: 500;
-  transition: opacity 0.15s;
+  font-size: var(--text-sm);
+  font-weight: var(--font-weight-medium);
+  transition: opacity var(--transition-fast);
+  font-family: var(--font-family);
 }
 
-.btn:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-
-.btn-sm {
-  padding: 0.25rem 0.6rem;
-  font-size: 0.8rem;
-}
-
-.btn-primary {
-  background: var(--tg-theme-button-color, #2481cc);
-  color: var(--tg-theme-button-text-color, #fff);
-}
-
-.btn-secondary {
-  background: var(--tg-theme-secondary-bg-color, #e0e0e0);
-  color: var(--tg-theme-text-color, #333);
-}
-
-.btn-danger {
-  background: #e74c3c;
-  color: #fff;
-}
-
-.btn-active {
-  background: #27ae60;
-  color: #fff;
-}
-
-.btn-inactive {
-  background: #bdc3c7;
-  color: #333;
-}
+.btn:disabled { opacity: 0.6; cursor: not-allowed; }
+.btn-sm { min-height: var(--tap-target); padding: 0 var(--space-2); font-size: var(--text-xs); }
+.btn-primary { background: var(--color-accent); color: var(--color-accent-text); }
+.btn-secondary { background: var(--color-surface); color: var(--color-text); }
+.btn-danger { background: var(--color-danger); color: #fff; }
+.btn-active { background: var(--color-success); color: #fff; }
+.btn-inactive { background: var(--color-inactive-bg); color: var(--color-inactive-text); }
 
 .btn-close {
   background: none;
   border: none;
-  font-size: 1.1rem;
+  font-size: var(--text-md);
   cursor: pointer;
-  color: var(--tg-theme-hint-color, #888);
-  padding: 0.25rem;
+  color: var(--color-hint);
+  padding: var(--space-1);
   line-height: 1;
+  min-height: var(--tap-target);
+  min-width: var(--tap-target);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
+/* Modal */
 .modal-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.45);
+  background: rgba(15, 15, 15, 0.45);
   display: flex;
   align-items: flex-start;
   justify-content: center;
-  padding: 1rem;
+  padding: var(--space-4);
   overflow-y: auto;
-  z-index: 100;
+  z-index: var(--z-modal);
 }
 
 .modal {
-  background: var(--tg-theme-bg-color, #fff);
-  border-radius: 12px;
+  background: var(--color-bg);
+  border-radius: var(--radius-lg);
   width: 100%;
   max-width: 520px;
-  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.18);
-  margin-top: 0.5rem;
+  box-shadow: var(--shadow-lg);
+  margin-top: var(--space-2);
 }
 
 .modal-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 1rem 1.25rem 0.75rem;
-  border-bottom: 1px solid var(--tg-theme-hint-color, #ddd);
+  padding: var(--space-4) var(--space-4) var(--space-3);
+  border-bottom: 1px solid color-mix(in srgb, var(--color-hint) 20%, transparent);
 }
 
 .modal-header h3 {
   margin: 0;
-  font-size: 1rem;
+  font-size: var(--text-md);
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: -0.01em;
 }
 
 .item-form {
-  padding: 1rem 1.25rem 1.25rem;
+  padding: var(--space-4);
   display: flex;
   flex-direction: column;
-  gap: 0.75rem;
-}
-
-.field {
-  display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
-}
-
-.field label {
-  font-size: 0.8rem;
-  font-weight: 500;
-  color: var(--tg-theme-hint-color, #666);
-}
-
-.field textarea {
-  border: 1px solid var(--tg-theme-hint-color, #ccc);
-  border-radius: 6px;
-  padding: 0.5rem 0.6rem;
-  font-size: 0.875rem;
-  background: var(--tg-theme-secondary-bg-color, #fafafa);
-  color: var(--tg-theme-text-color, #000);
-  width: 100%;
-  box-sizing: border-box;
-  resize: vertical;
-}
-
-.field-error {
-  color: #c0392b;
-  font-size: 0.78rem;
+  gap: var(--space-3);
 }
 
 .checkbox-field label {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: var(--space-2);
   cursor: pointer;
-  color: var(--tg-theme-text-color, #000);
-  font-size: 0.875rem;
-  font-weight: 400;
+  color: var(--color-text);
+  font-size: var(--text-base);
+  min-height: var(--tap-target);
 }
 
-.checkbox-field input[type='checkbox'] {
-  width: auto;
-}
+.checkbox-field input[type='checkbox'] { width: auto; }
 
 .form-actions {
   display: flex;
   justify-content: flex-end;
-  gap: 0.75rem;
-  padding-top: 0.5rem;
+  gap: var(--space-3);
+  padding-top: var(--space-2);
 }
 </style>

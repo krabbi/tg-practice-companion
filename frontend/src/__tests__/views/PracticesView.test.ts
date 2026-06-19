@@ -45,7 +45,9 @@ describe('PracticesView cadence form switch', () => {
       global: { plugins: [] },
     })
     await flushPromises()
-    await wrapper.find('button.btn-primary').trigger('click')
+    // Button component renders as button.ui-btn--primary
+    const addBtn = wrapper.findAll('button').find((b) => b.text().includes('Добавить'))
+    await addBtn!.trigger('click')
     return wrapper
   }
 

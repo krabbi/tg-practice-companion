@@ -150,6 +150,9 @@ describe('JournalView', () => {
     const wrapper = mount(JournalView)
     await flushPromises()
 
+    mockListJournal.mockClear()
+    mockListJournal.mockResolvedValue(makeListResponse([ENTRY], 50))
+
     const nextBtn = wrapper.findAll('.pagination button').find((b) => b.text().includes('Вперёд'))
     await nextBtn!.trigger('click')
     await flushPromises()
@@ -160,14 +163,16 @@ describe('JournalView', () => {
   it('apply filters calls listJournal with filter params', async () => {
     const wrapper = mount(JournalView)
     await flushPromises()
-    vi.clearAllMocks()
+    mockListJournal.mockClear()
     mockListJournal.mockResolvedValue(makeListResponse([]))
 
     const dateInputs = wrapper.findAll('input[type="date"]')
     await dateInputs[0].setValue('2024-01-01')
     await dateInputs[1].setValue('2024-01-31')
 
-    await wrapper.find('button.btn-primary').trigger('click')
+    // Button component renders as <button> — find by text
+    const applyBtn = wrapper.findAll('button').find((b) => b.text().includes('Применить'))
+    await applyBtn!.trigger('click')
     await flushPromises()
 
     expect(mockListJournal).toHaveBeenCalledWith(

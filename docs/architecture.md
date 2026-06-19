@@ -643,3 +643,64 @@ await self._session.commit()
 transcript = await transcription_service.transcribe(audio_bytes)
 await usage_service.record(kind=UsageKind.transcription, model="whisper-large-v3-turbo", audio_seconds=duration)
 ```
+
+---
+
+## Frontend design system (Stage 2, #134)
+
+### `frontend/src/styles/tokens.css`
+
+CSS custom property token layer imported globally via `App.vue`. All colour values
+derive from `--tg-theme-*` Telegram variables with light-mode fallbacks so the SPA
+renders correctly both inside and outside the Telegram webview.
+
+Token groups:
+
+| Group | Variables | Notes |
+|---|---|---|
+| Colour | `--color-bg`, `--color-surface`, `--color-text`, `--color-hint`, `--color-accent`, `--color-accent-text`, `--color-link`, `--color-danger*`, `--color-success*`, `--color-warning*`, `--color-info-bg`, `--color-active-*`, `--color-inactive-*` | All reference `--tg-theme-*` where applicable |
+| Typography | `--text-xs` … `--text-xl`, `--font-weight-medium` (500), `--font-weight-semibold` (600), `--font-weight-bold` (700), `--font-family`, `--leading-tight`, `--leading-normal` | System font stack only — no webfonts |
+| Spacing | `--space-1` (4px) … `--space-8` (32px) | 4 px base grid |
+| Radius | `--radius-sm` (4px), `--radius-md` (8px), `--radius-lg` (12px), `--radius-xl` (16px), `--radius-full` | |
+| Shadow | `--shadow-sm`, `--shadow-md`, `--shadow-lg` | Tinted to bg hue, not pure black |
+| Z-index | `--z-overlay` (90), `--z-modal` (100) | |
+| Layout | `--container-max` (640px), `--tap-target` (44px) | |
+
+### `frontend/src/components/ui/`
+
+Base component library. All components are slot-based and accept typed props.
+
+| Component | Props | Purpose |
+|---|---|---|
+| `Button.vue` | `variant` (primary/secondary/danger/ghost), `size` (sm/md/lg), `disabled`, `loading`, `type` | Accessible button with 44 px tap target, hover/active feedback, focus ring |
+| `Card.vue` | `interactive` | Surface container with shadow and border-radius; hover lift when interactive |
+| `Field.vue` | `label`, `error`, `hint` | Form field wrapper: label above, error/hint below, `:deep` input styles |
+| `Badge.vue` | `variant` (active/inactive/success/warning/info/danger) | Inline status pill |
+| `Modal.vue` | `open`, `title`; emits `close` | Teleported overlay with header slot and body slot |
+| `EmptyState.vue` | `pose` (meditating/yoga/stretching/lounging), `label` | Empty-list state with ginger cat asset and label |
+| `Spinner.vue` | `pose` (meditating/stretching), `label` | Loading state with pulsing ginger cat asset |
+
+### `frontend/src/assets/cats/`
+
+Ginger pixel-art cat SVGs. Static local files — zero external network requests (Telegram CSP safe).
+Each file uses `shape-rendering="crispEdges"` and rect-based pixel art in the `#e8853a`/`#d9742b` colour family.
+
+| File | Pose | Used in |
+|---|---|---|
+| `cat-meditating.svg` | Sitting calm, eyes closed | App boot loading, section loading (Spinner default) |
+| `cat-yoga.svg` | Arms raised in V / warrior | Success / "all done" states |
+| `cat-stretching.svg` | Horizontal stretch, paws forward | Transition / secondary loading |
+| `cat-lounging.svg` | Sprawled on side | Empty list states (EmptyState default) |
+
+### Mobile-first layout strategy
+
+All six views render both a **card list** (visible ≤ 480 px) and a **table** (visible ≥ 481 px).
+The global `App.vue` stylesheet hides the appropriate layout via:
+
+```css
+@media (min-width: 481px) { .card-list { display: none !important; } }
+@media (max-width: 480px)  { .table-wrap table { display: none; } }
+```
+
+This preserves the existing table markup (and its CSS selectors relied upon by Vitest tests)
+while delivering a touch-friendly card layout on mobile.
