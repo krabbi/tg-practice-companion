@@ -1,20 +1,21 @@
 """CLI: seed operator content from YAML files.
 
 Subcommands:
-    practices <yaml>   — upsert Practice rows (idempotent by name).
-    blessings <yaml>   — upsert MorningBlessing rows (idempotent by rotation_order).
+    practices <yaml>   — upsert Practice rows (idempotent by (user_id, name)).
+    blessings <yaml>   — upsert MorningBlessing rows (idempotent by (user_id, rotation_order)).
     images <yaml>      — upload local image files to Telegram, upsert MediaAsset +
                          MotivationalImage rows (idempotent by telegram_file_id).
     audio <yaml>       — upload local audio files to Telegram, upsert MediaAsset rows
                          referenced by Practice rows (idempotent by practice name).
 
 Usage:
-    python -m cli.seed practices  content/practices.yaml
-    python -m cli.seed blessings  content/blessings.yaml
-    python -m cli.seed images     content/images.yaml
-    python -m cli.seed audio      content/audio.yaml
+    python -m cli.seed practices  content/practices.yaml --user-id 123456789
+    python -m cli.seed blessings  content/blessings.yaml --user-id 123456789
+    python -m cli.seed images     content/images.yaml    --user-id 123456789
+    python -m cli.seed audio      content/audio.yaml     --user-id 123456789
 """
 
+import argparse
 import asyncio
 import logging
 import sys
@@ -99,8 +100,8 @@ def _parse_practice(row: dict, user_id: int) -> tuple[Practice, dict | None]:
     return practice, media_dict
 
 
-async def seed_practices(yaml_path: Path) -> None:
-    """Upsert practices from the given YAML file into the database."""
+async def seed_practices(yaml_path: Path, *, user_id: int) -> None:
+    """Upsert practices from the given YAML file into the database for the given user."""
     config = get_config()
     session_factory = build_session_factory(config.database_url)
 
@@ -110,11 +111,6 @@ async def seed_practices(yaml_path: Path) -> None:
     if not rows:
         logger.info("No practices found in %s", yaml_path)
         return
-
-    if not config.allowed_user_ids:
-        logger.error("ALLOWED_USER_IDS is empty — cannot determine user_id for seeding")
-        sys.exit(1)
-    seed_user_id = config.allowed_user_ids[0]
 
     async with session_factory() as session:
         repo = PracticeRepository(session)
@@ -135,14 +131,14 @@ async def seed_practices(yaml_path: Path) -> None:
                     send_window_end=config.send_window_end,
                 )
 
-            practice, media_dict = _parse_practice(row, seed_user_id)
-            existing = await repo.get_by_name(name, seed_user_id)
+            practice, media_dict = _parse_practice(row, user_id)
+            existing = await repo.get_by_name(name, user_id)
 
             asset_id: uuid.UUID | None = None
             if media_dict is not None:
                 if existing is not None and existing.media_asset_id is not None:
                     existing_asset = await repo.get_media_asset_by_id(
-                        existing.media_asset_id, seed_user_id
+                        existing.media_asset_id, user_id
                     )
                     if existing_asset is not None:
                         existing_asset.telegram_file_id = media_dict["telegram_file_id"]
@@ -153,7 +149,7 @@ async def seed_practices(yaml_path: Path) -> None:
                 else:
                     asset = MediaAsset(
                         id=uuid.uuid4(),
-                        user_id=seed_user_id,
+                        user_id=user_id,
                         kind=media_dict["kind"],
                         telegram_file_id=media_dict["telegram_file_id"],
                         mime=media_dict["mime"],
@@ -191,8 +187,8 @@ async def seed_practices(yaml_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
-async def seed_blessings(yaml_path: Path) -> None:
-    """Upsert morning blessings from the given YAML file (idempotent by rotation_order)."""
+async def seed_blessings(yaml_path: Path, *, user_id: int) -> None:
+    """Upsert morning blessings from the given YAML file (idempotent by (user_id, rotation_order))."""
     config = get_config()
     session_factory = build_session_factory(config.database_url)
 
@@ -203,11 +199,6 @@ async def seed_blessings(yaml_path: Path) -> None:
         logger.info("No blessings found in %s", yaml_path)
         return
 
-    if not config.allowed_user_ids:
-        logger.error("ALLOWED_USER_IDS is empty — cannot determine user_id for seeding")
-        sys.exit(1)
-    seed_user_id = config.allowed_user_ids[0]
-
     async with session_factory() as session:
         repo = BlessingRepository(session)
 
@@ -216,7 +207,7 @@ async def seed_blessings(yaml_path: Path) -> None:
             text: str = row["text"]
             active: bool = row.get("active", True)
 
-            existing = await repo.get_by_rotation_order(rotation_order, seed_user_id)
+            existing = await repo.get_by_rotation_order(rotation_order, user_id)
             if existing is not None:
                 existing.text = text
                 existing.active = active
@@ -225,7 +216,7 @@ async def seed_blessings(yaml_path: Path) -> None:
             else:
                 blessing = MorningBlessing(
                     id=uuid.uuid4(),
-                    user_id=seed_user_id,
+                    user_id=user_id,
                     text=text,
                     rotation_order=rotation_order,
                     active=active,
@@ -243,11 +234,11 @@ async def seed_blessings(yaml_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
-async def seed_images(yaml_path: Path, *, bot: object | None = None) -> None:
+async def seed_images(yaml_path: Path, *, user_id: int, bot: object | None = None) -> None:
     """Upload local image files to Telegram and upsert MediaAsset + MotivationalImage rows.
 
     Each YAML entry must have a `local_path` field pointing to the image file.
-    The file is uploaded to the first allowed user via bot.send_photo.
+    The file is uploaded to the target user via bot.send_photo.
     Re-runs are idempotent: files already uploaded (same local_path) are re-uploaded
     and the media_asset row updated.
 
@@ -266,11 +257,6 @@ async def seed_images(yaml_path: Path, *, bot: object | None = None) -> None:
         logger.info("No images found in %s", yaml_path)
         return
 
-    if not config.allowed_user_ids:
-        logger.error("ALLOWED_USER_IDS is empty — cannot upload files to Telegram")
-        sys.exit(1)
-
-    upload_chat_id = config.allowed_user_ids[0]
     own_bot = bot is None
     if own_bot:
         bot = Bot(token=config.telegram_bot_token)
@@ -291,7 +277,7 @@ async def seed_images(yaml_path: Path, *, bot: object | None = None) -> None:
 
                 logger.info("Uploading %s …", local_path)
                 input_file = FSInputFile(local_path)
-                msg = await bot.send_photo(chat_id=upload_chat_id, photo=input_file)  # type: ignore[union-attr]
+                msg = await bot.send_photo(chat_id=user_id, photo=input_file)  # type: ignore[union-attr]
                 if msg.photo is None:
                     logger.error("Upload returned no photo for %s — skipping", local_path)
                     continue
@@ -310,7 +296,7 @@ async def seed_images(yaml_path: Path, *, bot: object | None = None) -> None:
                 else:
                     asset = MediaAsset(
                         id=uuid.uuid4(),
-                        user_id=upload_chat_id,
+                        user_id=user_id,
                         kind="image",
                         telegram_file_id=telegram_file_id,
                         mime=mime,
@@ -321,7 +307,7 @@ async def seed_images(yaml_path: Path, *, bot: object | None = None) -> None:
                     logger.info("Created media_asset id=%s", asset_id)
 
                 # Upsert motivational_image row
-                existing_img = await image_repo.get_by_media_asset_id(asset_id, upload_chat_id)
+                existing_img = await image_repo.get_by_media_asset_id(asset_id, user_id)
                 if existing_img is not None:
                     existing_img.active = active
                     await image_repo.save(existing_img)
@@ -329,7 +315,7 @@ async def seed_images(yaml_path: Path, *, bot: object | None = None) -> None:
                 else:
                     motivational_img = MotivationalImage(
                         id=uuid.uuid4(),
-                        user_id=upload_chat_id,
+                        user_id=user_id,
                         media_asset_id=asset_id,
                         active=active,
                     )
@@ -349,7 +335,7 @@ async def seed_images(yaml_path: Path, *, bot: object | None = None) -> None:
 # ---------------------------------------------------------------------------
 
 
-async def seed_audio(yaml_path: Path, *, bot: object | None = None) -> None:
+async def seed_audio(yaml_path: Path, *, user_id: int, bot: object | None = None) -> None:
     """Upload local audio files to Telegram and upsert MediaAsset rows.
 
     Each YAML entry must have `name` (practice name) and `local_path`.
@@ -371,11 +357,6 @@ async def seed_audio(yaml_path: Path, *, bot: object | None = None) -> None:
         logger.info("No audio entries found in %s", yaml_path)
         return
 
-    if not config.allowed_user_ids:
-        logger.error("ALLOWED_USER_IDS is empty — cannot upload files to Telegram")
-        sys.exit(1)
-
-    upload_chat_id = config.allowed_user_ids[0]
     own_bot = bot is None
     if own_bot:
         bot = Bot(token=config.telegram_bot_token)
@@ -393,14 +374,14 @@ async def seed_audio(yaml_path: Path, *, bot: object | None = None) -> None:
                     logger.error("Audio file not found: %s — skipping", local_path)
                     continue
 
-                practice = await repo.get_by_name(name, upload_chat_id)
+                practice = await repo.get_by_name(name, user_id)
                 if practice is None:
                     logger.error("Practice %r not found — seed practices first, then audio", name)
                     continue
 
                 logger.info("Uploading %s …", local_path)
                 input_file = FSInputFile(local_path)
-                msg = await bot.send_audio(chat_id=upload_chat_id, audio=input_file)  # type: ignore[union-attr]
+                msg = await bot.send_audio(chat_id=user_id, audio=input_file)  # type: ignore[union-attr]
                 if msg.audio is None:
                     logger.error("Upload returned no audio for %s — skipping", local_path)
                     continue
@@ -410,7 +391,7 @@ async def seed_audio(yaml_path: Path, *, bot: object | None = None) -> None:
                 # Upsert media_asset
                 if practice.media_asset_id is not None:
                     existing_asset = await repo.get_media_asset_by_id(
-                        practice.media_asset_id, upload_chat_id
+                        practice.media_asset_id, user_id
                     )
                     if existing_asset is not None:
                         existing_asset.telegram_file_id = telegram_file_id
@@ -420,7 +401,7 @@ async def seed_audio(yaml_path: Path, *, bot: object | None = None) -> None:
                     else:
                         asset = MediaAsset(
                             id=uuid.uuid4(),
-                            user_id=upload_chat_id,
+                            user_id=user_id,
                             kind="audio",
                             telegram_file_id=telegram_file_id,
                             mime=mime,
@@ -433,7 +414,7 @@ async def seed_audio(yaml_path: Path, *, bot: object | None = None) -> None:
                 else:
                     asset = MediaAsset(
                         id=uuid.uuid4(),
-                        user_id=upload_chat_id,
+                        user_id=user_id,
                         kind="audio",
                         telegram_file_id=telegram_file_id,
                         mime=mime,
@@ -465,19 +446,25 @@ _SUBCOMMANDS = {
 
 
 def main() -> None:
-    """Entry point: python -m cli.seed <subcommand> <yaml_path>."""
-    if len(sys.argv) < 3 or sys.argv[1] not in _SUBCOMMANDS:
-        cmds = " | ".join(_SUBCOMMANDS)
-        print(f"Usage: python -m cli.seed [{cmds}] <yaml_path>", file=sys.stderr)
+    """Entry point: python -m cli.seed <subcommand> <yaml_path> --user-id <id>."""
+    parser = argparse.ArgumentParser(
+        description="Seed operator content from YAML files for a specific user."
+    )
+    parser.add_argument("subcommand", choices=list(_SUBCOMMANDS), help="Seeding subcommand")
+    parser.add_argument("yaml_path", type=Path, help="Path to the YAML file")
+    parser.add_argument(
+        "--user-id",
+        type=int,
+        required=True,
+        help="Target user's Telegram ID (content is scoped to this user)",
+    )
+    args = parser.parse_args()
+
+    if not args.yaml_path.exists():
+        print(f"File not found: {args.yaml_path}", file=sys.stderr)
         sys.exit(1)
 
-    subcommand = sys.argv[1]
-    yaml_path = Path(sys.argv[2])
-    if not yaml_path.exists():
-        print(f"File not found: {yaml_path}", file=sys.stderr)
-        sys.exit(1)
-
-    asyncio.run(_SUBCOMMANDS[subcommand](yaml_path))
+    asyncio.run(_SUBCOMMANDS[args.subcommand](args.yaml_path, user_id=args.user_id))
 
 
 if __name__ == "__main__":

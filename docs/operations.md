@@ -643,8 +643,9 @@ and slot 06 is now admitted regardless — phase is unchanged.
 
 ### Seeding practices
 
-Use `python -m cli.seed practices content/practices.yaml` to load or update practice rows.
-The seed is idempotent (upserts by `name`). See `content/practices.example.yaml` for the
+Use `python -m cli.seed practices content/practices.yaml --user-id <TELEGRAM_USER_ID>` to load
+or update practice rows for a specific user.
+The seed is idempotent (upserts by `(user_id, name)`). See `content/practices.example.yaml` for the
 full YAML schema and the reference daily cycle.
 
 ---
@@ -682,7 +683,7 @@ cursor state — it is fully determined by the calendar date (AC-3).
 Deduplication: `users.last_blessing_date` tracks the last day a blessing was sent.
 A second tick at the same 06:00 slot (e.g., after a bot restart) does not resend.
 
-Seed blessings via `python -m cli.seed blessings content/blessings.yaml`.
+Seed blessings via `python -m cli.seed blessings content/blessings.yaml --user-id <TELEGRAM_USER_ID>`.
 
 ### 06:00 hourly-question collision
 
@@ -706,7 +707,7 @@ set `anchor_hour=7` on the hourly question practice row.  This is a data-only ch
   anchor_minute: 0
 ```
 
-After re-seeding with `python -m cli.seed practices content/practices.yaml` the new
+After re-seeding with `python -m cli.seed practices content/practices.yaml --user-id <TELEGRAM_USER_ID>` the new
 cadence takes effect on the next tick — no restart needed.
 
 ---
@@ -807,18 +808,18 @@ Schedule this with cron on the host, e.g. daily at 03:00:
 
 ### Workflow A — YAML + make seed (recommended)
 
-Edit the YAML files in `content/`, then run:
+Edit the YAML files in `content/`, then run (replace `<UID>` with the target user's Telegram ID):
 
 ```bash
 # Locally (requires .env and DB running):
-python -m cli.seed practices content/practices.yaml
-python -m cli.seed blessings content/blessings.yaml
+python -m cli.seed practices content/practices.yaml --user-id <UID>
+python -m cli.seed blessings content/blessings.yaml --user-id <UID>
 
 # Via Docker Compose (no local Python setup needed).
 # The `-v` mount is required: the image bakes only the example YAML, so the host
 # content/ directory (your edited files) must be mounted over /app/content.
-docker compose run --rm -v "$PWD/content:/app/content" bot python -m cli.seed practices content/practices.yaml
-docker compose run --rm -v "$PWD/content:/app/content" bot python -m cli.seed blessings content/blessings.yaml
+docker compose run --rm -v "$PWD/content:/app/content" bot python -m cli.seed practices content/practices.yaml --user-id <UID>
+docker compose run --rm -v "$PWD/content:/app/content" bot python -m cli.seed blessings content/blessings.yaml --user-id <UID>
 ```
 
 All seed commands are **idempotent** — safe to re-run after any edit.
@@ -843,7 +844,7 @@ Changes take effect on the next scheduler tick (within 1 minute) — no restart 
 ### How to add or remove a practice mid-week
 
 1. Edit `content/practices.yaml` (add/update/set `active: false`).
-2. Re-seed: `python -m cli.seed practices content/practices.yaml`
+2. Re-seed: `python -m cli.seed practices content/practices.yaml --user-id <UID>`
 3. No bot restart required — the scheduler reads the DB on every tick.
 
 ### How to upload new audio and get the file_id (audio subcommand)
@@ -858,12 +859,12 @@ Changes take effect on the next scheduler tick (within 1 minute) — no restart 
   mime: audio/mpeg
 ```
 
-4. Run the seeder:
+4. Run the seeder (replace `<UID>` with the target user's Telegram ID):
 
 ```bash
-python -m cli.seed audio content/audio.yaml
+python -m cli.seed audio content/audio.yaml --user-id <UID>
 # Or via Docker (mount host content/ so media files and YAML are visible):
-docker compose run --rm -v "$PWD/content:/app/content" bot python -m cli.seed audio content/audio.yaml
+docker compose run --rm -v "$PWD/content:/app/content" bot python -m cli.seed audio content/audio.yaml --user-id <UID>
 ```
 
 The seeder uploads the file to Telegram, captures the `file_id`, and stores it in
@@ -880,12 +881,12 @@ The seeder uploads the file to Telegram, captures the `file_id`, and stores it i
   active: true
 ```
 
-3. Run the seeder:
+3. Run the seeder (replace `<UID>` with the target user's Telegram ID):
 
 ```bash
-python -m cli.seed images content/images.yaml
+python -m cli.seed images content/images.yaml --user-id <UID>
 # Or via Docker (mount host content/ so media files and YAML are visible):
-docker compose run --rm -v "$PWD/content:/app/content" bot python -m cli.seed images content/images.yaml
+docker compose run --rm -v "$PWD/content:/app/content" bot python -m cli.seed images content/images.yaml --user-id <UID>
 ```
 
 The seeder uploads the file, captures the `file_id`, and upserts a `media_assets` +

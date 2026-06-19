@@ -50,7 +50,7 @@ One row per schedulable practice. Cadence and content are data; code is the engi
 |---|---|---|---|---|
 | `id` | `UUID` | NO | `uuid4()` | Primary key |
 | `user_id` | `BigInteger FK→users.telegram_id` | NO | — | Owning user |
-| `name` | `String(120)` | NO | — | Human-readable identifier; used for idempotent seed upsert |
+| `name` | `String(120)` | NO | — | Human-readable identifier; used for idempotent seed upsert by `(user_id, name)` |
 | `content_type` | `Enum(question, text, audio, image, want, good_deeds, motivational_image)` | NO | — | Determines delivery method |
 | `content` | `Text` | YES | — | Body for `question`/`text` practices |
 | `media_asset_id` | `UUID FK→media_assets` | YES | — | Set for `audio`/`image` practices |

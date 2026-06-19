@@ -29,6 +29,9 @@ from cli.seed import (
 
 PRACTICES_EXAMPLE = Path(__file__).parent.parent / "content" / "practices.example.yaml"
 
+USER_A = 123456789
+USER_B = 987654321
+
 
 def _make_photo_msg(file_id: str) -> MagicMock:
     """Return a fake Message with a photo array (largest last)."""
@@ -101,10 +104,10 @@ async def test_seed_practices_creates_rows(db_session: object, fake_config: obje
     ):
         # Wire the mock session factory to return db_session
         mock_factory.return_value = _make_cm_factory(db_session)
-        await seed_practices(PRACTICES_EXAMPLE)
+        await seed_practices(PRACTICES_EXAMPLE, user_id=USER_A)
 
     repo = PracticeRepository(db_session)
-    practices = await repo.get_active_practices(123456789)
+    practices = await repo.get_active_practices(USER_A)
     assert len(practices) > 0
 
     names = {p.name for p in practices}
@@ -121,11 +124,11 @@ async def test_seed_practices_idempotent(db_session: object, fake_config: object
         patch("cli.seed.get_config", return_value=fake_config),
         patch("cli.seed.build_session_factory", return_value=factory),
     ):
-        await seed_practices(PRACTICES_EXAMPLE)
-        await seed_practices(PRACTICES_EXAMPLE)
+        await seed_practices(PRACTICES_EXAMPLE, user_id=USER_A)
+        await seed_practices(PRACTICES_EXAMPLE, user_id=USER_A)
 
     repo = PracticeRepository(db_session)
-    practices = await repo.get_active_practices(123456789)
+    practices = await repo.get_active_practices(USER_A)
     names = [p.name for p in practices]
     # No duplicate names
     assert len(names) == len(set(names))
@@ -139,14 +142,14 @@ async def test_seed_practices_audio_creates_media_asset(
         patch("cli.seed.get_config", return_value=fake_config),
         patch("cli.seed.build_session_factory", return_value=_make_cm_factory(db_session)),
     ):
-        await seed_practices(PRACTICES_EXAMPLE)
+        await seed_practices(PRACTICES_EXAMPLE, user_id=USER_A)
 
     repo = PracticeRepository(db_session)
-    practice = await repo.get_by_name("Night hypnosis", 123456789)
+    practice = await repo.get_by_name("Night hypnosis", USER_A)
     assert practice is not None
     assert practice.media_asset_id is not None
 
-    asset = await repo.get_media_asset_by_id(practice.media_asset_id, 123456789)
+    asset = await repo.get_media_asset_by_id(practice.media_asset_id, USER_A)
     assert asset is not None
     assert asset.telegram_file_id == "CQACAgIAAxk..."
     assert asset.storage_path is None  # Stage 1 invariant
@@ -182,10 +185,37 @@ async def test_seed_practices_anchor_window_warning(
             patch("cli.seed.build_session_factory", return_value=_make_cm_factory(db_session)),
             caplog.at_level(logging.WARNING, logger="cli.seed"),
         ):
-            await seed_practices(tmp_path)
+            await seed_practices(tmp_path, user_id=USER_A)
         assert "will never fire" in caplog.text
     finally:
         tmp_path.unlink(missing_ok=True)
+
+
+async def test_seed_practices_two_users_independent(
+    db_session: object, fake_config: object
+) -> None:
+    """Seeding the same YAML for two different user_ids creates independent content sets."""
+    factory = _make_cm_factory(db_session)
+
+    with (
+        patch("cli.seed.get_config", return_value=fake_config),
+        patch("cli.seed.build_session_factory", return_value=factory),
+    ):
+        await seed_practices(PRACTICES_EXAMPLE, user_id=USER_A)
+        await seed_practices(PRACTICES_EXAMPLE, user_id=USER_B)
+
+    repo = PracticeRepository(db_session)
+    practices_a = await repo.get_active_practices(USER_A)
+    practices_b = await repo.get_active_practices(USER_B)
+
+    # Both users have independent rows
+    assert len(practices_a) > 0
+    assert len(practices_b) > 0
+    assert len(practices_a) == len(practices_b)
+
+    # All rows are owned by the correct user
+    assert all(p.user_id == USER_A for p in practices_a)
+    assert all(p.user_id == USER_B for p in practices_b)
 
 
 # ---------------------------------------------------------------------------
@@ -212,10 +242,10 @@ async def test_seed_blessings_creates_rows(db_session: object, fake_config: obje
             patch("cli.seed.get_config", return_value=fake_config),
             patch("cli.seed.build_session_factory", return_value=_make_cm_factory(db_session)),
         ):
-            await seed_blessings(tmp_path)
+            await seed_blessings(tmp_path, user_id=USER_A)
 
         repo = BlessingRepository(db_session)
-        blessings = await repo.get_active_ordered(123456789)
+        blessings = await repo.get_active_ordered(USER_A)
         assert len(blessings) == 2
         assert blessings[0].text == "Good morning 1"
         assert blessings[1].text == "Good morning 2"
@@ -245,16 +275,52 @@ async def test_seed_blessings_idempotent(db_session: object, fake_config: object
             patch("cli.seed.get_config", return_value=fake_config),
             patch("cli.seed.build_session_factory", return_value=factory),
         ):
-            await seed_blessings(tmp_path)
-            await seed_blessings(tmp2_path)
+            await seed_blessings(tmp_path, user_id=USER_A)
+            await seed_blessings(tmp2_path, user_id=USER_A)
 
         repo = BlessingRepository(db_session)
-        blessings = await repo.get_active_ordered(123456789)
+        blessings = await repo.get_active_ordered(USER_A)
         assert len(blessings) == 1
         assert blessings[0].text == "Updated"
     finally:
         tmp_path.unlink(missing_ok=True)
         tmp2_path.unlink(missing_ok=True)
+
+
+async def test_seed_blessings_two_users_independent(
+    db_session: object, fake_config: object
+) -> None:
+    """Seeding the same blessings YAML for two users creates independent rows."""
+    import tempfile
+
+    import yaml
+
+    blessings_data = [
+        {"rotation_order": 1, "text": "Hello user", "active": True},
+    ]
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as tmp:
+        yaml.dump(blessings_data, tmp)
+        tmp_path = Path(tmp.name)
+
+    try:
+        factory = _make_cm_factory(db_session)
+        with (
+            patch("cli.seed.get_config", return_value=fake_config),
+            patch("cli.seed.build_session_factory", return_value=factory),
+        ):
+            await seed_blessings(tmp_path, user_id=USER_A)
+            await seed_blessings(tmp_path, user_id=USER_B)
+
+        repo = BlessingRepository(db_session)
+        blessings_a = await repo.get_active_ordered(USER_A)
+        blessings_b = await repo.get_active_ordered(USER_B)
+
+        assert len(blessings_a) == 1
+        assert len(blessings_b) == 1
+        assert blessings_a[0].user_id == USER_A
+        assert blessings_b[0].user_id == USER_B
+    finally:
+        tmp_path.unlink(missing_ok=True)
 
 
 # ---------------------------------------------------------------------------
@@ -281,7 +347,7 @@ async def test_seed_images_creates_media_asset_and_motivational_image(
         patch("cli.seed.get_config", return_value=fake_config),
         patch("cli.seed.build_session_factory", return_value=_make_cm_factory(db_session)),
     ):
-        await seed_images(yaml_file, bot=mock_bot)
+        await seed_images(yaml_file, user_id=USER_A, bot=mock_bot)
 
     mock_bot.send_photo.assert_awaited_once()
 
@@ -294,7 +360,7 @@ async def test_seed_images_creates_media_asset_and_motivational_image(
     assert asset.mime == "image/jpeg"
 
     image_repo = ImageRepository(db_session)
-    motiv_img = await image_repo.get_by_media_asset_id(asset.id, 123456789)
+    motiv_img = await image_repo.get_by_media_asset_id(asset.id, USER_A)
     assert motiv_img is not None
     assert motiv_img.active is True
     assert motiv_img.media_asset_id == asset.id
@@ -320,8 +386,8 @@ async def test_seed_images_idempotent(
         patch("cli.seed.get_config", return_value=fake_config),
         patch("cli.seed.build_session_factory", return_value=factory),
     ):
-        await seed_images(yaml_file, bot=mock_bot)
-        await seed_images(yaml_file, bot=mock_bot)
+        await seed_images(yaml_file, user_id=USER_A, bot=mock_bot)
+        await seed_images(yaml_file, user_id=USER_A, bot=mock_bot)
 
     # Both uploads happened (two calls to send_photo)
     assert mock_bot.send_photo.await_count == 2
@@ -336,7 +402,7 @@ async def test_seed_images_idempotent(
     assert len(assets) == 1
 
     image_repo = ImageRepository(db_session)
-    imgs = await image_repo.get_active(123456789)
+    imgs = await image_repo.get_active(USER_A)
     mi_for_asset = [i for i in imgs if i.media_asset_id == assets[0].id]
     assert len(mi_for_asset) == 1
 
@@ -356,7 +422,7 @@ async def test_seed_audio_creates_media_asset_on_practice(
     practice_repo = PracticeRepository(db_session)
     practice = Practice(
         id=uuid.uuid4(),
-        user_id=123456789,
+        user_id=USER_A,
         name="Night hypnosis",
         content_type="audio",
         periodicity_type="fixed_times",
@@ -383,14 +449,14 @@ async def test_seed_audio_creates_media_asset_on_practice(
         patch("cli.seed.get_config", return_value=fake_config),
         patch("cli.seed.build_session_factory", return_value=_make_cm_factory(db_session)),
     ):
-        await seed_audio(yaml_file, bot=mock_bot)
+        await seed_audio(yaml_file, user_id=USER_A, bot=mock_bot)
 
     mock_bot.send_audio.assert_awaited_once()
 
     await db_session.refresh(practice)
     assert practice.media_asset_id is not None
 
-    asset = await practice_repo.get_media_asset_by_id(practice.media_asset_id, 123456789)
+    asset = await practice_repo.get_media_asset_by_id(practice.media_asset_id, USER_A)
     assert asset is not None
     assert asset.kind == "audio"
     assert asset.telegram_file_id == "TG_FILE_ID_AUDIO_001"
@@ -407,7 +473,7 @@ async def test_seed_audio_idempotent(
     practice_repo = PracticeRepository(db_session)
     practice = Practice(
         id=uuid.uuid4(),
-        user_id=123456789,
+        user_id=USER_A,
         name="Night hypnosis",
         content_type="audio",
         periodicity_type="fixed_times",
@@ -435,8 +501,8 @@ async def test_seed_audio_idempotent(
         patch("cli.seed.get_config", return_value=fake_config),
         patch("cli.seed.build_session_factory", return_value=factory),
     ):
-        await seed_audio(yaml_file, bot=mock_bot)
-        await seed_audio(yaml_file, bot=mock_bot)
+        await seed_audio(yaml_file, user_id=USER_A, bot=mock_bot)
+        await seed_audio(yaml_file, user_id=USER_A, bot=mock_bot)
 
     assert mock_bot.send_audio.await_count == 2
 
