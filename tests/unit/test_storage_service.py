@@ -16,7 +16,8 @@ def _make_config(**overrides):
         "s3_access_key_id": "key-id",
         "s3_secret_access_key": "secret",
         "s3_presign_expiry_seconds": 900,
-        "media_max_upload_bytes": 10 * 1024 * 1024,
+        "media_max_image_bytes": 10 * 1024 * 1024,
+        "media_max_audio_bytes": 50 * 1024 * 1024,
     }
     defaults.update(overrides)
 
