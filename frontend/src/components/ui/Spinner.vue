@@ -49,4 +49,8 @@ const altText = computed(() => {
   0%, 100% { opacity: 1; transform: scale(1); }
   50% { opacity: 0.7; transform: scale(0.95); }
 }
+
+@media (prefers-reduced-motion: reduce) {
+  .ui-spinner__cat { animation: none; }
+}
 </style>

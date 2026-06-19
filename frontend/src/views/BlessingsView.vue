@@ -168,14 +168,14 @@ onMounted(loadBlessings)
         <div class="card-main">
           <div class="order-controls-card">
             <button
-              class="btn-order-card"
+              class="btn-order"
               :disabled="idx === 0"
               title="Переместить вверх"
               @click="move(idx, -1)"
             >▲</button>
             <span class="order-num">{{ b.rotation_order }}</span>
             <button
-              class="btn-order-card"
+              class="btn-order"
               :disabled="idx === blessings.length - 1"
               title="Переместить вниз"
               @click="move(idx, 1)"
