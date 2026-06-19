@@ -214,7 +214,9 @@ async def test_upload_over_10mb_returns_413(client: AsyncClient, auth_headers: d
     assert "10 MB" in resp.json()["detail"]
 
 
-async def test_upload_audio_over_image_limit_passes(client: AsyncClient, auth_headers: dict) -> None:
+async def test_upload_audio_over_image_limit_passes(
+    client: AsyncClient, auth_headers: dict
+) -> None:
     """Audio above the 10 MB image cap is accepted (audio cap is 50 MB)."""
     data_bytes = b"x" * (10 * 1024 * 1024 + 1)
     files = {"file": ("big.mp3", io.BytesIO(data_bytes), "audio/mpeg")}
