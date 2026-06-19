@@ -102,7 +102,8 @@ _AMERICA_CURATED: list[str] = [
     "America/Caracas",
     "America/Santiago",
     "America/Sao_Paulo",
-    "America/Buenos_Aires",
+    "America/Argentina/Buenos_Aires",
+    "America/Montevideo",
 ]
 
 
