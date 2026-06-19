@@ -285,9 +285,7 @@ async def test_upload_persists_original_filename():
     """upload() must set original_filename on the created MediaAsset row."""
     service, _session, repo, _image_repo, _s3 = _make_service()
 
-    asset = await service.upload(
-        b"bytes", "my-photo.jpg", "image", "image/jpeg", user_id=_USER_ID
-    )
+    asset = await service.upload(b"bytes", "my-photo.jpg", "image", "image/jpeg", user_id=_USER_ID)
 
     assert asset.original_filename == "my-photo.jpg"
 
