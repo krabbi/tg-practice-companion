@@ -35,6 +35,7 @@ const uploading = ref(false)
 const uploadProgress = ref(0)
 const uploadError = ref('')
 const uploadedAsset = ref<MediaAsset | null>(null)
+const uploadedName = ref('')
 
 const motivAssetId = ref('')
 const motivActive = ref(true)
@@ -70,6 +71,7 @@ function onFileChange(e: Event): void {
 
 async function doUpload(): Promise<void> {
   if (!uploadFile.value) return
+  const fileName = uploadFile.value.name
   uploading.value = true
   uploadProgress.value = 0
   uploadError.value = ''
@@ -79,6 +81,7 @@ async function doUpload(): Promise<void> {
       uploadProgress.value = p
     })
     uploadedAsset.value = asset
+    uploadedName.value = fileName
     assets.value.unshift(asset)
     uploadFile.value = null
     if (uploadFileRef.value) uploadFileRef.value.value = ''
@@ -208,6 +211,10 @@ onMounted(loadAssets)
         <div v-if="uploadedAsset" class="upload-result">
           <p class="success-msg">Файл загружен</p>
           <div class="asset-info">
+            <div v-if="uploadedName" class="info-row">
+              <span class="info-key">Имя файла</span>
+              <span class="asset-name">{{ uploadedName }}</span>
+            </div>
             <div class="info-row">
               <span class="info-key">UUID</span>
               <code class="asset-id">{{ uploadedAsset.id }}</code>
@@ -567,6 +574,12 @@ onMounted(loadAssets)
 }
 
 .asset-id.small { font-size: var(--text-xs); }
+
+.asset-name {
+  font-size: var(--text-sm);
+  font-weight: var(--font-weight-medium);
+  word-break: break-all;
+}
 
 /* Filter tabs */
 .filter-tabs {
