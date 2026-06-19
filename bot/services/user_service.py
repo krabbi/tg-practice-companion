@@ -15,6 +15,6 @@ class UserService:
 
     async def get_or_create(self, telegram_id: int, language: str) -> User:
         """Return the User, creating it on first contact; owns the commit."""
-        user = await self._repo.get_or_create(telegram_id, language)
+        user = await self._repo.get_or_create(telegram_id, language=language)
         await self._session.commit()
         return user
