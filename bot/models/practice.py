@@ -45,6 +45,7 @@ class MediaAsset(Base, UUIDMixin, TimestampMixin):
     # Telegram file ID used for re-sending without re-uploading (AC-2)
     telegram_file_id: Mapped[str | None] = mapped_column(String(256), nullable=True)
     mime: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    original_filename: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
 
 class Practice(Base, UUIDMixin, TimestampMixin):
