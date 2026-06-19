@@ -27,7 +27,7 @@ Owned media entity for audio/image practices. Stage 1 populates `telegram_file_i
 |---|---|---|---|---|
 | `id` | `UUID` | NO | `uuid4()` | Primary key |
 | `user_id` | `BigInteger FK→users.telegram_id` | NO | — | Owning user |
-| `kind` | `Enum(audio, image)` | NO | — | Media type |
+| `kind` | `Enum(audio, image, video)` | NO | — | Media type |
 | `storage_path` | `String(512)` | YES | — | S3 object key (`kind/<uuid><ext>`); null in Stage 1 |
 | `telegram_file_id` | `String(256)` | YES | — | Stored Telegram file ID for re-sending (AC-2) |
 | `mime` | `String(128)` | YES | — | MIME type, e.g. `audio/mpeg` |
@@ -39,7 +39,7 @@ Invariant: at least one of `storage_path` / `telegram_file_id` must be non-null 
 
 Index: `ix_media_assets_user_id(user_id)`
 
-Migrations: `alembic/versions/0002_practice_engine.py` (initial schema); `alembic/versions/0010_per_user_content.py` (added `user_id`); `alembic/versions/0011_media_asset_original_filename.py` (added `original_filename`).
+Migrations: `alembic/versions/0002_practice_engine.py` (initial schema); `alembic/versions/0010_per_user_content.py` (added `user_id`); `alembic/versions/0011_media_asset_original_filename.py` (added `original_filename`); `alembic/versions/0012_video_practice_type.py` (added `video` to `media_asset_kind`).
 
 ---
 
@@ -52,7 +52,7 @@ One row per schedulable practice. Cadence and content are data; code is the engi
 | `id` | `UUID` | NO | `uuid4()` | Primary key |
 | `user_id` | `BigInteger FK→users.telegram_id` | NO | — | Owning user |
 | `name` | `String(120)` | NO | — | Human-readable identifier; used for idempotent seed upsert by `(user_id, name)` |
-| `content_type` | `Enum(question, text, audio, image, want, good_deeds, motivational_image)` | NO | — | Determines delivery method |
+| `content_type` | `Enum(question, text, audio, image, video, want, good_deeds, motivational_image)` | NO | — | Determines delivery method |
 | `content` | `Text` | YES | — | Body for `question`/`text` practices |
 | `media_asset_id` | `UUID FK→media_assets` | YES | — | Set for `audio`/`image` practices |
 | `periodicity_type` | `Enum(every_n_hours, fixed_times)` | NO | — | Cadence type |
@@ -69,7 +69,7 @@ One row per schedulable practice. Cadence and content are data; code is the engi
 
 Index: `ix_practices_user_active(user_id, active)` (replaces the former `ix_practices_active(active)` added by 0002)
 
-Migrations: `alembic/versions/0002_practice_engine.py` (initial schema); `alembic/versions/0007_want_practice_type.py` (added `want` to the `content_type` enum); `alembic/versions/0008_good_deeds_practice_type.py` (added `good_deeds`); `alembic/versions/0009_motivational_image_practice_type.py` (added `motivational_image`); `alembic/versions/0010_per_user_content.py` (added `user_id`).
+Migrations: `alembic/versions/0002_practice_engine.py` (initial schema); `alembic/versions/0007_want_practice_type.py` (added `want` to the `content_type` enum); `alembic/versions/0008_good_deeds_practice_type.py` (added `good_deeds`); `alembic/versions/0009_motivational_image_practice_type.py` (added `motivational_image`); `alembic/versions/0010_per_user_content.py` (added `user_id`); `alembic/versions/0012_video_practice_type.py` (added `video` to `practice_content_type` and `media_asset_kind`).
 
 ---
 

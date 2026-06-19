@@ -52,6 +52,7 @@ def make_service() -> tuple[DeliveryService, MagicMock]:
     mock_bot.send_message = AsyncMock()
     mock_bot.send_audio = AsyncMock()
     mock_bot.send_photo = AsyncMock()
+    mock_bot.send_video = AsyncMock()
     return DeliveryService(mock_bot), mock_bot
 
 
@@ -113,6 +114,41 @@ async def test_image_practice_calls_send_photo_with_unchanged_file_id() -> None:
     bot.send_photo.assert_awaited_once_with(chat_id=USER_ID, photo="AgACAgI_photo_abc")
     bot.send_audio.assert_not_awaited()
     bot.send_message.assert_not_awaited()
+
+
+# ---------------------------------------------------------------------------
+# video
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_video_practice_calls_send_video_with_unchanged_file_id() -> None:
+    """Video practice must call send_video with the stored telegram_file_id unchanged (AC-2)."""
+    svc, bot = make_service()
+    asset = make_asset(kind="video", telegram_file_id="BAACAgI_video_xyz")
+    p = make_practice(content_type="video", media_asset=asset)
+    await svc.send(p, USER_ID)
+    bot.send_video.assert_awaited_once_with(chat_id=USER_ID, video="BAACAgI_video_xyz")
+    bot.send_audio.assert_not_awaited()
+    bot.send_photo.assert_not_awaited()
+    bot.send_message.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_video_missing_media_asset_raises_delivery_error() -> None:
+    svc, _ = make_service()
+    p = make_practice(content_type="video", media_asset=None)
+    with pytest.raises(DeliveryError):
+        await svc.send(p, USER_ID)
+
+
+@pytest.mark.asyncio
+async def test_video_missing_telegram_file_id_raises_delivery_error() -> None:
+    svc, _ = make_service()
+    asset = make_asset(kind="video", telegram_file_id=None)
+    p = make_practice(content_type="video", media_asset=asset)
+    with pytest.raises(DeliveryError):
+        await svc.send(p, USER_ID)
 
 
 # ---------------------------------------------------------------------------

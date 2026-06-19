@@ -37,7 +37,7 @@ class MediaAsset(Base, UUIDMixin, TimestampMixin):
         BigInteger, ForeignKey("users.telegram_id"), nullable=False, index=True
     )
     kind: Mapped[str] = mapped_column(
-        Enum("audio", "image", name="media_asset_kind"),
+        Enum("audio", "image", "video", name="media_asset_kind"),
         nullable=False,
     )
     # S3 object key for original bytes (e.g. "image/<uuid>.jpg"); null in Stage 1
@@ -69,6 +69,7 @@ class Practice(Base, UUIDMixin, TimestampMixin):
             "text",
             "audio",
             "image",
+            "video",
             "want",
             "good_deeds",
             "motivational_image",

@@ -72,7 +72,7 @@ async def test_upload_invalid_kind_rejected():
 
     with pytest.raises(MediaAssetError, match="Invalid kind"):
         await service.upload(
-            b"data", "x.bin", "video", "application/octet-stream", user_id=_USER_ID
+            b"data", "x.bin", "document", "application/octet-stream", user_id=_USER_ID
         )
 
     repo.create.assert_not_awaited()
@@ -293,6 +293,7 @@ async def test_upload_persists_original_filename():
 def test_kind_default_suffix():
     assert _kind_default_suffix("image") == ".jpg"
     assert _kind_default_suffix("audio") == ".mp3"
+    assert _kind_default_suffix("video") == ".mp4"
 
 
 async def test_send_to_telegram_audio_returns_file_id():
@@ -320,3 +321,28 @@ async def test_send_to_telegram_propagates_exception():
 
     with pytest.raises(RuntimeError, match="telegram down"):
         await _send_to_telegram(bot, 1, b"a", "p.jpg", "image")
+
+
+async def test_upload_video_accepted():
+    service, _session, repo, _image_repo, s3 = _make_service(bot=None, chat_id=None)
+
+    asset = await service.upload(b"vid", "clip.mp4", "video", "video/mp4", user_id=_USER_ID)
+
+    assert asset.kind == "video"
+    assert asset.storage_path.startswith("video/")
+    assert asset.storage_path.endswith(".mp4")
+    s3.put_object.assert_awaited_once()
+
+
+async def test_send_to_telegram_video_returns_file_id():
+    bot = MagicMock()
+    video_obj = MagicMock()
+    video_obj.file_id = "VIDEO_FILE_ID"
+    video_msg = MagicMock()
+    video_msg.video = video_obj
+    bot.send_video = AsyncMock(return_value=video_msg)
+
+    result = await _send_to_telegram(bot, 1, b"v", "clip.mp4", "video")
+
+    assert result == "VIDEO_FILE_ID"
+    bot.send_video.assert_awaited_once()

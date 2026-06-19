@@ -57,8 +57,8 @@ class MediaAdminService:
         When bot is None (e.g. in tests), the Telegram upload step is skipped and
         telegram_file_id is left null. The storage_path invariant is always satisfied.
         """
-        if kind not in ("audio", "image"):
-            raise MediaAssetError(f"Invalid kind: {kind!r}; must be 'audio' or 'image'")
+        if kind not in ("audio", "image", "video"):
+            raise MediaAssetError(f"Invalid kind: {kind!r}; must be 'audio', 'image', or 'video'")
 
         asset_id = uuid.uuid4()
         suffix = Path(filename).suffix or _kind_default_suffix(kind)
@@ -143,7 +143,11 @@ class MediaAdminService:
 
 def _kind_default_suffix(kind: str) -> str:
     """Return the default file extension for a given media kind."""
-    return ".jpg" if kind == "image" else ".mp3"
+    if kind == "image":
+        return ".jpg"
+    if kind == "video":
+        return ".mp4"
+    return ".mp3"
 
 
 async def _send_to_telegram(
@@ -161,6 +165,10 @@ async def _send_to_telegram(
         msg = await bot.send_photo(chat_id=chat_id, photo=input_file)  # type: ignore[union-attr]
         if msg.photo:
             return msg.photo[-1].file_id
+    elif kind == "video":
+        msg = await bot.send_video(chat_id=chat_id, video=input_file)  # type: ignore[union-attr]
+        if msg.video:
+            return msg.video.file_id
     else:
         msg = await bot.send_audio(chat_id=chat_id, audio=input_file)  # type: ignore[union-attr]
         if msg.audio:
