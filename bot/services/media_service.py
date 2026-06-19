@@ -86,6 +86,7 @@ class MediaAdminService:
             storage_path=key,
             telegram_file_id=telegram_file_id,
             mime=mime,
+            original_filename=filename,
         )
         await self._repo.create(asset)
         await self._session.commit()

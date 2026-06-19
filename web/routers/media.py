@@ -25,6 +25,7 @@ class MediaAssetResponse(BaseModel):
     storage_path: str | None
     telegram_file_id: str | None
     mime: str | None
+    original_filename: str | None
     created_at: datetime
     updated_at: datetime
 

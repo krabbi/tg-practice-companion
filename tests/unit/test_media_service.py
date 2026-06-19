@@ -281,6 +281,17 @@ async def test_create_motivational_image_success():
     session.commit.assert_awaited_once()
 
 
+async def test_upload_persists_original_filename():
+    """upload() must set original_filename on the created MediaAsset row."""
+    service, _session, repo, _image_repo, _s3 = _make_service()
+
+    asset = await service.upload(
+        b"bytes", "my-photo.jpg", "image", "image/jpeg", user_id=_USER_ID
+    )
+
+    assert asset.original_filename == "my-photo.jpg"
+
+
 def test_kind_default_suffix():
     assert _kind_default_suffix("image") == ".jpg"
     assert _kind_default_suffix("audio") == ".mp3"
