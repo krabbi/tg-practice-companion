@@ -60,20 +60,25 @@ def compose(practices: list[Practice]) -> list[Practice]:
     return sorted(practices, key=lambda p: p.sort_order)
 
 
-async def run_morning_analysis(bot, session_factory: async_sessionmaker, config: Config) -> None:  # type: ignore[type-arg]
-    """Run the morning AI analysis of yesterday's journal entries (AC-11).
+async def run_morning_analysis(  # type: ignore[type-arg]
+    bot,
+    session_factory: async_sessionmaker,
+    config: Config,
+    user_id: int,
+) -> None:
+    """Run the morning AI analysis of yesterday's journal entries for one user (AC-11).
 
-    Dispatched as a separate one-shot APScheduler job (never awaited inline in
-    tick) so that slow LLM calls cannot block the 60-second practice-delivery
-    tick.  Idempotent per (user_id, analysis_date) — safe to re-dispatch.
+    Dispatched as a separate one-shot APScheduler job per user (never awaited inline
+    in tick) so that slow LLM calls cannot block the 60-second practice-delivery tick.
+    Idempotent per (user_id, analysis_date) — safe to re-dispatch.
     """
-    logger.info("run_morning_analysis: starting")
+    logger.info("run_morning_analysis: starting for user %s", user_id)
 
     async with session_factory() as session:
         user_repo = UserRepository(session)
-        user = await user_repo.get_first()
+        user = await user_repo.get_by_telegram_id(user_id)
         if user is None:
-            logger.info("run_morning_analysis: no user found, skipping")
+            logger.info("run_morning_analysis: user %s not found, skipping", user_id)
             return
 
         tz_string = user.timezone or "UTC"
@@ -140,13 +145,17 @@ async def tick(  # type: ignore[type-arg]
     config: Config,
     scheduler: AsyncIOScheduler,
 ) -> None:
-    """Evaluate due practices for the current UTC minute and send them.
+    """Evaluate due practices for the current UTC minute and send them for all users.
 
     This job runs every 60 seconds with max_instances=1 and coalesce=True,
     so it can never overlap itself and a missed minute collapses into one run.
 
-    At _MORNING_BLOCK_HOUR:00 local time the tick:
-    1. Dispatches run_morning_analysis as a one-shot job (off-tick, never awaited).
+    Each user is evaluated independently in their own timezone and send-window.
+    One user's failure (bad timezone, send error) is caught and logged so the
+    remaining users in the loop are not affected.
+
+    At _MORNING_BLOCK_HOUR:00 local time, for each user the tick:
+    1. Dispatches run_morning_analysis as a per-user one-shot job (off-tick).
     2. Sends the rotating morning blessing (inline, deduped by last_blessing_date).
     3. Delivers all other due practices in compose() order (sort_order ascending).
     """
@@ -163,233 +172,261 @@ async def tick(  # type: ignore[type-arg]
         want_list_svc = WantListService(session, WantListRepository(session))
         image_repo = ImageRepository(session)
 
-        user = await user_repo.get_first()
-        if user is None:
-            logger.debug("tick: no user found, skipping")
+        users = await user_repo.list_all()
+        if not users:
+            logger.debug("tick: no users found, skipping")
             return
 
-        # Resolve local timezone — default to UTC if user hasn't set one yet
-        tz_string = user.timezone or "UTC"
-        try:
-            user_tz = ZoneInfo(tz_string)
-        except (ZoneInfoNotFoundError, KeyError):
-            logger.warning(
-                "tick: invalid timezone %r for user %s, skipping", tz_string, user.telegram_id
-            )
-            return
-
-        local_now = now_utc.astimezone(user_tz)
-
-        # Morning-block dispatch: fire once when the clock hits _MORNING_BLOCK_HOUR.
-        # The analysis job is dispatched before the send-window check so it runs
-        # regardless of any future send-window reconfiguration (AC-11).
-        if local_now.hour == _MORNING_BLOCK_HOUR and local_now.minute == 0:
-            scheduler.add_job(
-                run_morning_analysis,
-                "date",
-                run_date=now_utc,
-                args=[bot, session_factory, config],
-                id="morning_analysis",
-                replace_existing=True,
-                max_instances=1,
-            )
-            logger.info("tick: dispatched morning_analysis one-shot job")
-
-        # Send-window check: half-open [send_window_start, send_window_end)
-        if not (config.send_window_start <= local_now.hour < config.send_window_end):
-            logger.debug(
-                "tick: outside send window (%02d:xx, window [%d, %d))",
-                local_now.hour,
-                config.send_window_start,
-                config.send_window_end,
-            )
-            return
-
-        # Skip-day check
-        if user.skip_until is not None and user.skip_until >= local_now.date():
-            logger.debug(
-                "tick: skip_until=%s is active for user %s", user.skip_until, user.telegram_id
-            )
-            return
-
-        # Morning blessing: sent once per calendar day at _MORNING_BLOCK_HOUR:00.
-        # Deduped via user.last_blessing_date so a bot restart at :00 never double-sends.
-        if (
-            local_now.hour == _MORNING_BLOCK_HOUR
-            and local_now.minute == 0
-            and user.last_blessing_date != local_now.date()
-        ):
-            blessing_repo = BlessingRepository(session)
-            blessing_svc = BlessingService(blessing_repo)
-            blessing = await blessing_svc.for_date(user.telegram_id, local_now.date())
-            if blessing is not None:
-                # Claim before sending (same pattern as PracticeSend)
-                user.last_blessing_date = local_now.date()
-                await session.commit()
+        for user in users:
+            try:
+                # Resolve local timezone — default to UTC if user hasn't set one yet
+                tz_string = user.timezone or "UTC"
                 try:
-                    await bot.send_message(chat_id=user.telegram_id, text=blessing.text)
-                    logger.info(
-                        "tick: sent morning blessing (rotation_order=%d) to user %s",
-                        blessing.rotation_order,
+                    user_tz = ZoneInfo(tz_string)
+                except (ZoneInfoNotFoundError, KeyError):
+                    logger.warning(
+                        "tick: invalid timezone %r for user %s, skipping",
+                        tz_string,
                         user.telegram_id,
-                    )
-                except Exception:
-                    logger.error(
-                        "tick: failed to send morning blessing to user %s",
-                        user.telegram_id,
-                        exc_info=True,
-                    )
-
-        due_practices = await practice_service.due_now(user.telegram_id, local_now)
-        if not due_practices:
-            logger.debug("tick: no practices due at %s", local_now.strftime("%H:%M"))
-            return
-
-        slot = _slot_key(local_now)
-
-        for practice in compose(due_practices):
-            # Capture scalar values up front — after session.commit() the ORM object
-            # is expired; reading attributes after that would trigger a lazy-load.
-            practice_id = practice.id
-            practice_name = practice.name
-            practice_content_type = practice.content_type
-
-            # Backward-tz-jump guard: refuse to claim a slot whose local wall-time
-            # precedes the wall-time at the last timezone change.
-            if user.tz_changed_at is not None:
-                # Convert tz_changed_at (UTC) into the current zone
-                tz_change_local = user.tz_changed_at.astimezone(user_tz)
-                # Compare HH:MM strings: if the slot's wall-time precedes the change
-                # wall-time, refuse to claim it (backward / westward jump guard)
-                slot_dt = local_now.replace(second=0, microsecond=0)
-                if slot_dt < tz_change_local.replace(second=0, microsecond=0):
-                    logger.debug(
-                        "tick: backward-tz-jump guard blocked slot %s for practice %s",
-                        slot,
-                        practice_id,
                     )
                     continue
 
-            claimed = await send_repo.try_claim(
-                practice_id=practice_id,
-                user_id=user.telegram_id,
-                slot_key=slot,
-                sent_at=now_utc,
-            )
-            if not claimed:
-                logger.debug(
-                    "tick: slot %s for practice %s already claimed, skipping",
-                    slot,
-                    practice_id,
-                )
-                continue
+                local_now = now_utc.astimezone(user_tz)
 
-            # Commit the claim before attempting delivery; if delivery fails we at
-            # least avoid double-sending on the next tick (claimed row persists).
-            await session.commit()
+                # Morning-block dispatch: fire once when the clock hits _MORNING_BLOCK_HOUR.
+                # The analysis job is dispatched before the send-window check so it runs
+                # regardless of any future send-window reconfiguration (AC-11).
+                # Each user gets their own job id so replace_existing=True never clobbers
+                # another user's analysis job.
+                if local_now.hour == _MORNING_BLOCK_HOUR and local_now.minute == 0:
+                    job_id = f"morning_{user.telegram_id}_{local_now.date()}"
+                    scheduler.add_job(
+                        run_morning_analysis,
+                        "date",
+                        run_date=now_utc,
+                        args=[bot, session_factory, config, user.telegram_id],
+                        id=job_id,
+                        replace_existing=True,
+                        max_instances=1,
+                    )
+                    logger.info(
+                        "tick: dispatched morning_analysis one-shot job for user %s",
+                        user.telegram_id,
+                    )
 
-            if practice_content_type == "want":
-                item = await want_list_svc.random_active(user.telegram_id)
-                if item is None:
-                    logger.info(
-                        "tick: no undone want items for user %s, slot %s claimed silently",
+                # Send-window check: half-open [send_window_start, send_window_end)
+                if not (config.send_window_start <= local_now.hour < config.send_window_end):
+                    logger.debug(
+                        "tick: outside send window (%02d:xx, window [%d, %d)) for user %s",
+                        local_now.hour,
+                        config.send_window_start,
+                        config.send_window_end,
                         user.telegram_id,
-                        slot,
                     )
-                else:
-                    try:
-                        await bot.send_message(
-                            chat_id=user.telegram_id,
-                            text=t("want_daily_pick", user.language).format(text=escape(item.text)),
-                        )
-                        logger.info(
-                            "tick: sent want pick to user %s at slot %s",
-                            user.telegram_id,
-                            slot,
-                        )
-                    except Exception:
-                        logger.error(
-                            "tick: failed to send want pick to user %s at slot %s",
-                            user.telegram_id,
-                            slot,
-                            exc_info=True,
-                        )
-            elif practice_content_type == "good_deeds":
-                content = practice.content or ""
-                try:
-                    sent = await bot.send_message(chat_id=user.telegram_id, text=content)
-                    await prompt_repo.create(
-                        user_id=user.telegram_id,
-                        kind="good_deeds",
-                        practice_id=practice_id,
-                        telegram_message_id=sent.message_id,
-                    )
-                    await session.commit()
-                    logger.info(
-                        "tick: sent good_deed question to user %s at slot %s",
+                    continue
+
+                # Skip-day check
+                if user.skip_until is not None and user.skip_until >= local_now.date():
+                    logger.debug(
+                        "tick: skip_until=%s is active for user %s",
+                        user.skip_until,
                         user.telegram_id,
-                        slot,
                     )
-                except Exception:
-                    logger.error(
-                        "tick: failed to send good_deed question to user %s at slot %s",
-                        user.telegram_id,
-                        slot,
-                        exc_info=True,
-                    )
-            elif practice_content_type == "motivational_image":
-                image = await image_repo.random_active(user.telegram_id)
-                if image is None:
-                    logger.info(
-                        "tick: no active motivational images for user %s, slot %s claimed silently",
-                        user.telegram_id,
-                        slot,
-                    )
-                else:
-                    file_id = image.media_asset.telegram_file_id if image.media_asset else None
-                    if file_id is None:
-                        logger.error(
-                            "tick: motivational image %s has no telegram_file_id, skipping",
-                            image.id,
-                        )
-                    else:
+                    continue
+
+                # Morning blessing: sent once per calendar day at _MORNING_BLOCK_HOUR:00.
+                # Deduped via user.last_blessing_date so a bot restart at :00 never double-sends.
+                if (
+                    local_now.hour == _MORNING_BLOCK_HOUR
+                    and local_now.minute == 0
+                    and user.last_blessing_date != local_now.date()
+                ):
+                    blessing_repo = BlessingRepository(session)
+                    blessing_svc = BlessingService(blessing_repo)
+                    blessing = await blessing_svc.for_date(user.telegram_id, local_now.date())
+                    if blessing is not None:
+                        # Claim before sending (same pattern as PracticeSend)
+                        user.last_blessing_date = local_now.date()
+                        await session.commit()
                         try:
-                            await bot.send_photo(chat_id=user.telegram_id, photo=file_id)
+                            await bot.send_message(chat_id=user.telegram_id, text=blessing.text)
                             logger.info(
-                                "tick: sent afternoon motivational image to user %s at slot %s",
+                                "tick: sent morning blessing (rotation_order=%d) to user %s",
+                                blessing.rotation_order,
+                                user.telegram_id,
+                            )
+                        except Exception:
+                            logger.error(
+                                "tick: failed to send morning blessing to user %s",
+                                user.telegram_id,
+                                exc_info=True,
+                            )
+
+                due_practices = await practice_service.due_now(user.telegram_id, local_now)
+                if not due_practices:
+                    logger.debug(
+                        "tick: no practices due at %s for user %s",
+                        local_now.strftime("%H:%M"),
+                        user.telegram_id,
+                    )
+                    continue
+
+                slot = _slot_key(local_now)
+
+                for practice in compose(due_practices):
+                    # Capture scalar values up front — after session.commit() the ORM object
+                    # is expired; reading attributes after that would trigger a lazy-load.
+                    practice_id = practice.id
+                    practice_name = practice.name
+                    practice_content_type = practice.content_type
+
+                    # Backward-tz-jump guard: refuse to claim a slot whose local wall-time
+                    # precedes the wall-time at the last timezone change.
+                    if user.tz_changed_at is not None:
+                        # Convert tz_changed_at (UTC) into the current zone
+                        tz_change_local = user.tz_changed_at.astimezone(user_tz)
+                        # Compare HH:MM strings: if the slot's wall-time precedes the change
+                        # wall-time, refuse to claim it (backward / westward jump guard)
+                        slot_dt = local_now.replace(second=0, microsecond=0)
+                        if slot_dt < tz_change_local.replace(second=0, microsecond=0):
+                            logger.debug(
+                                "tick: backward-tz-jump guard blocked slot %s for practice %s",
+                                slot,
+                                practice_id,
+                            )
+                            continue
+
+                    claimed = await send_repo.try_claim(
+                        practice_id=practice_id,
+                        user_id=user.telegram_id,
+                        slot_key=slot,
+                        sent_at=now_utc,
+                    )
+                    if not claimed:
+                        logger.debug(
+                            "tick: slot %s for practice %s already claimed, skipping",
+                            slot,
+                            practice_id,
+                        )
+                        continue
+
+                    # Commit the claim before attempting delivery; if delivery fails we at
+                    # least avoid double-sending on the next tick (claimed row persists).
+                    await session.commit()
+
+                    if practice_content_type == "want":
+                        item = await want_list_svc.random_active(user.telegram_id)
+                        if item is None:
+                            logger.info(
+                                "tick: no undone want items for user %s, slot %s claimed silently",
+                                user.telegram_id,
+                                slot,
+                            )
+                        else:
+                            try:
+                                await bot.send_message(
+                                    chat_id=user.telegram_id,
+                                    text=t("want_daily_pick", user.language).format(
+                                        text=escape(item.text)
+                                    ),
+                                )
+                                logger.info(
+                                    "tick: sent want pick to user %s at slot %s",
+                                    user.telegram_id,
+                                    slot,
+                                )
+                            except Exception:
+                                logger.error(
+                                    "tick: failed to send want pick to user %s at slot %s",
+                                    user.telegram_id,
+                                    slot,
+                                    exc_info=True,
+                                )
+                    elif practice_content_type == "good_deeds":
+                        content = practice.content or ""
+                        try:
+                            sent = await bot.send_message(chat_id=user.telegram_id, text=content)
+                            await prompt_repo.create(
+                                user_id=user.telegram_id,
+                                kind="good_deeds",
+                                practice_id=practice_id,
+                                telegram_message_id=sent.message_id,
+                            )
+                            await session.commit()
+                            logger.info(
+                                "tick: sent good_deed question to user %s at slot %s",
                                 user.telegram_id,
                                 slot,
                             )
                         except Exception:
                             logger.error(
-                                "tick: failed to send afternoon motivational image to user %s "
-                                "at slot %s",
+                                "tick: failed to send good_deed question to user %s at slot %s",
                                 user.telegram_id,
                                 slot,
                                 exc_info=True,
                             )
-            else:
-                try:
-                    await delivery_service.send(practice, user.telegram_id)
-                    # Commit to persist the pending_prompt written by DeliveryService
-                    # for question practices (flushed but not yet committed).
-                    await session.commit()
-                    logger.info(
-                        "tick: delivered practice %s (%r) to user %s at slot %s",
-                        practice_id,
-                        practice_name,
-                        user.telegram_id,
-                        slot,
-                    )
-                except Exception:
-                    logger.error(
-                        "tick: delivery failed for practice %s at slot %s",
-                        practice_id,
-                        slot,
-                        exc_info=True,
-                    )
-                    # Delivery failure is logged but does not un-claim the slot —
-                    # a failed send is still counted so we don't spam on the next tick.
+                    elif practice_content_type == "motivational_image":
+                        image = await image_repo.random_active(user.telegram_id)
+                        if image is None:
+                            logger.info(
+                                "tick: no active motivational images for user %s, slot %s claimed silently",
+                                user.telegram_id,
+                                slot,
+                            )
+                        else:
+                            file_id = (
+                                image.media_asset.telegram_file_id if image.media_asset else None
+                            )
+                            if file_id is None:
+                                logger.error(
+                                    "tick: motivational image %s has no telegram_file_id, skipping",
+                                    image.id,
+                                )
+                            else:
+                                try:
+                                    await bot.send_photo(chat_id=user.telegram_id, photo=file_id)
+                                    logger.info(
+                                        "tick: sent afternoon motivational image to user %s at slot %s",
+                                        user.telegram_id,
+                                        slot,
+                                    )
+                                except Exception:
+                                    logger.error(
+                                        "tick: failed to send afternoon motivational image to user %s "
+                                        "at slot %s",
+                                        user.telegram_id,
+                                        slot,
+                                        exc_info=True,
+                                    )
+                    else:
+                        try:
+                            await delivery_service.send(practice, user.telegram_id)
+                            # Commit to persist the pending_prompt written by DeliveryService
+                            # for question practices (flushed but not yet committed).
+                            await session.commit()
+                            logger.info(
+                                "tick: delivered practice %s (%r) to user %s at slot %s",
+                                practice_id,
+                                practice_name,
+                                user.telegram_id,
+                                slot,
+                            )
+                        except Exception:
+                            logger.error(
+                                "tick: delivery failed for practice %s at slot %s",
+                                practice_id,
+                                slot,
+                                exc_info=True,
+                            )
+                            # Delivery failure is logged but does not un-claim the slot —
+                            # a failed send is still counted so we don't spam on the next tick.
+
+            except Exception:
+                logger.error(
+                    "tick: unhandled error for user %s, continuing with next user",
+                    user.telegram_id,
+                    exc_info=True,
+                )
 
 
 async def housekeeping(session_factory: async_sessionmaker) -> None:  # type: ignore[type-arg]
