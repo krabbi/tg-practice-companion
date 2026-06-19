@@ -45,6 +45,7 @@ const navItems = [
   overflow-x: auto;
   background-color: var(--tg-theme-secondary-bg-color, #f0f0f0);
   padding: 0.5rem;
+  padding-top: calc(0.5rem + var(--tg-safe-area-inset-top, env(safe-area-inset-top, 0px)));
   gap: 0.25rem;
   flex-shrink: 0;
 }
