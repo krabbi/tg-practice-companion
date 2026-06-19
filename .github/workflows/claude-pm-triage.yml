@@ -1,0 +1,201 @@
+name: Claude PM triage
+
+# Fires when an operator adds the 'claude-triage' label to a raw or loosely-described
+# issue. The product-manager agent refines the issue (small: edit in place; large:
+# decompose into subtasks; well-formed: confirm only) and parks it as 'needs-human'
+# for the operator to review before manually queuing for implementation.
+#
+# This stage sits BEFORE claude-queued / claude-ready in the pipeline.
+on:
+  issues:
+    types: [labeled]
+
+jobs:
+  triage:
+    # Guard: only fire when claude-triage was added to an issue (not a PR).
+    if: |
+      github.event.label.name == 'claude-triage'
+      && github.event.issue.pull_request == null
+    # All autobot workflows share the claude-worker group — one task at a time,
+    # subscription-cap protection. cancel-in-progress: false ensures a queued
+    # triage run is not cancelled by a concurrent label event.
+    concurrency:
+      group: "${{ github.event.label.name == 'claude-triage' && 'claude-worker' || format('claude-skip-{0}', github.run_id) }}"
+      cancel-in-progress: false
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    permissions:
+      contents: read
+      issues: write
+      id-token: write
+    steps:
+      # claude-code-action needs a git directory to run.
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: anthropics/claude-code-action@v1
+        id: claude
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          prompt: |
+            You are the **product-manager** agent for the tg-practice-companion repository.
+            Your role description is in `.claude/agents/product-manager.md` — read it first.
+
+            Your task: triage issue #${{ github.event.issue.number }}.
+
+            ## Step 1 — Re-triage guard
+            Check whether the issue already has a label from the set `needs-human`,
+            `claude-queued`, or `claude-ready`:
+            ```bash
+            gh issue view ${{ github.event.issue.number }} --json labels --jq '.labels[].name'
+            ```
+            If ANY of those labels is present, post a comment:
+            "Triage already completed for this issue (label `needs-human`/`claude-queued`/`claude-ready` is present). Remove the existing label before re-triaging."
+            Then exit — do NOT edit the issue body or flip labels.
+
+            ## Step 2 — Classify the issue
+            Read the issue body:
+            ```bash
+            gh issue view ${{ github.event.issue.number }} --json body,title --jq '{title: .title, body: .body}'
+            ```
+
+            Classify into one of four categories:
+
+            **empty** — body is blank or has no intent (just whitespace / template headings / placeholder text).
+
+            **well-formed** — has a title + description + at least some acceptance criteria. Recognisable by
+            the presence of an ## Acceptance criteria or ## AC section with at least one checkbox or bullet.
+
+            **small** — single coherent change in one architecture layer. Has an intent but lacks proper AC.
+
+            **large** — multiple independent steps or spans several architecture layers. Needs decomposition
+            into subtask issues.
+
+            ## Step 3 — Act on classification
+
+            ### empty
+            Post a comment: "Issue body is empty — please describe what you want to accomplish so I can help refine it. I'll park this as `needs-human` for now."
+            Do NOT edit the issue body.
+
+            ### well-formed
+            Post a comment: "This issue is already well-formed (has title, description, and acceptance criteria). No edits needed."
+            Do NOT edit the issue body.
+
+            ### small
+            Edit the issue body with a refined version that follows this template:
+            ```
+            ## Overview
+            <2-3 sentence description of the feature/fix and the problem it solves>
+
+            ## Happy path
+            1. <step>
+            2. <step>
+
+            ## Edge cases
+            - <edge case>: <expected behaviour>
+
+            ## Out of scope
+            - <explicitly excluded item>
+
+            ## Acceptance criteria
+            - [ ] <specific, testable criterion>
+            - [ ] <specific, testable criterion>
+            ```
+            Then post a comment explaining what you changed and why.
+
+            ### large
+            Create subtask issues using `gh issue create`, following the subtask template from
+            `.claude/agents/product-manager.md`. For each subtask that depends on another, declare
+            the dependency on its own line in the body exactly as:
+            ```
+            Blocked by #N
+            ```
+            (single space between `by` and `#`, on a dedicated line — required by claude-chain-driver.yml).
+
+            After creating all subtasks, update the parent issue body to include a subtask checklist:
+            ```
+            ## Subtasks
+            - [ ] #<number> — <subtask title>
+            ```
+            Then post a comment explaining the decomposition: why you split it, what each subtask covers,
+            and which blocker dependencies you created.
+
+            ## Step 4 — Final label flip
+            Regardless of classification, always end by:
+            1. Removing label `claude-triage`
+            2. Adding label `needs-human`
+            3. Posting a comment: "Triage done — review and queue manually (`claude-queued` or `claude-ready`)."
+
+            Use GH_TOKEN for all label operations (already set in your environment via AUTOMATION_TOKEN).
+
+            IMPORTANT: You are the product-manager only. Do NOT create branches, write code, open PRs,
+            or perform any implementation work. Do NOT post verdict markers (<!-- autobot:*-verdict:* -->).
+            Do NOT use `gh pr merge`, `gh pr close`, `gh issue close`, `gh pr review`, or `gh pr comment`.
+          claude_args: |
+            --max-turns 80
+            --allowedTools "Bash,Read,Glob,Grep"
+            --disallowedTools "Bash(gh pr merge:*),Bash(gh pr close:*),Bash(gh issue close:*),Bash(gh pr review:*),Bash(gh pr comment:*),Edit,Write,MultiEdit"
+        env:
+          GH_TOKEN: ${{ secrets.AUTOMATION_TOKEN }}
+
+      # Subscription-limit guard.
+      # claude-code-action swallows is_error. If is_error==true and
+      # subtype != error_max_turns, park the issue as autobot-paused.
+      # After 5 pauses escalate to needs-human (not a transient limit hit).
+      - name: Pause on triage subscription-limit exhaustion
+        id: triagelimitcheck
+        env:
+          GH_TOKEN: ${{ secrets.AUTOMATION_TOKEN }}
+        run: |
+          ISSUE_NUMBER="${{ github.event.issue.number }}"
+          FILE="${{ steps.claude.outputs.execution_file }}"
+          if [ -z "$FILE" ] || [ ! -f "$FILE" ]; then
+            FILE="${RUNNER_TEMP}/claude-execution-output.json"
+          fi
+          IS_ERROR=""; SUBTYPE=""
+          if [ -f "$FILE" ]; then
+            IS_ERROR=$(jq -rs 'flatten | map(select(.type=="result")) | last | .is_error // empty' "$FILE" 2>/dev/null || true)
+            SUBTYPE=$(jq -rs 'flatten | map(select(.type=="result")) | last | .subtype // empty' "$FILE" 2>/dev/null || true)
+          fi
+          echo "execution result: is_error=${IS_ERROR:-?} subtype=${SUBTYPE:-?}"
+          if [ "$IS_ERROR" = "true" ] && [ "$SUBTYPE" != "error_max_turns" ]; then
+            PAUSES=$(gh issue view "$ISSUE_NUMBER" --json comments \
+              --jq '[.comments[].body | select(contains("<!-- autobot:triage-pause-count -->"))] | length' 2>/dev/null || echo 0)
+            if [ "${PAUSES:-0}" -ge 5 ]; then
+              gh issue comment "$ISSUE_NUMBER" --body "[AUTOBOT] PM-triage agent paused ${PAUSES}× on agent errors — not a transient subscription-limit hit. Setting needs-human."
+              gh issue edit "$ISSUE_NUMBER" \
+                --remove-label "claude-triage" \
+                --remove-label "autobot-paused" || true
+              gh issue edit "$ISSUE_NUMBER" --add-label "needs-human"
+            else
+              gh issue comment "$ISSUE_NUMBER" --body "[AUTOBOT] PM-triage agent returned is_error with no usable result (subtype=${SUBTYPE:-none}) — most likely the Claude subscription 5-hour limit is exhausted. Parking issue as autobot-paused; re-add \`claude-triage\` manually once the limit resets. <!-- autobot:triage-pause-count -->"
+              gh issue edit "$ISSUE_NUMBER" \
+                --remove-label "claude-triage" \
+                --remove-label "needs-human" || true
+              gh issue edit "$ISSUE_NUMBER" --add-label "autobot-paused"
+            fi
+            echo "triage_paused=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "triage_paused=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      # Post-agent verification: confirm the agent finished triage
+      # (needs-human label set and claude-triage removed).
+      - name: Verify triage completed
+        if: steps.triagelimitcheck.outputs.triage_paused != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.AUTOMATION_TOKEN }}
+        run: |
+          ISSUE_NUMBER="${{ github.event.issue.number }}"
+          LABELS=$(gh issue view "$ISSUE_NUMBER" --json labels --jq '.labels[].name' 2>/dev/null || true)
+          if echo "$LABELS" | grep -q "^needs-human$"; then
+            echo "Triage completed: needs-human label is present."
+          else
+            # Agent may have failed silently — ensure the issue is parked correctly.
+            gh issue comment "$ISSUE_NUMBER" --body "[AUTOBOT ERROR] PM-triage agent ran but 'needs-human' label is missing for issue #${ISSUE_NUMBER}. Manual triage required."
+            gh issue edit "$ISSUE_NUMBER" \
+              --remove-label "claude-triage" || true
+            gh issue edit "$ISSUE_NUMBER" --add-label "needs-human"
+            exit 1
+          fi
