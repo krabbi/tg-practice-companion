@@ -58,18 +58,17 @@ class MotivationalImageResponse(BaseModel):
 def _make_service(
     request: Request,
     session: AsyncSession = Depends(get_db_session),  # noqa: B008
+    current_user: dict = Depends(get_current_user),  # noqa: B008
 ) -> MediaAdminService:
     """Build MediaAdminService from request context."""
-    config = request.app.state.config
     bot = getattr(request.app.state, "bot", None)
-    chat_id = config.allowed_user_ids[0] if config.allowed_user_ids else None
     storage = request.app.state.storage_service
     return MediaAdminService(
         session,
         MediaAssetRepository(session),
         ImageRepository(session),
         bot,
-        chat_id,
+        current_user["id"],
         storage,
     )
 

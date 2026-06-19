@@ -494,6 +494,14 @@ The module is import-free of FastAPI — pure functions, fully unit-testable.
 | `get_db_session` | `AsyncGenerator[AsyncSession, None]` | Yields one session per request from `app.state.session_factory` |
 | `get_current_user` | `dict` | Extracts Bearer JWT; raises 401 missing/invalid; raises 403 not in `allowed_user_ids` only when `allowed_user_ids` is non-empty |
 
+### Per-user scoping
+
+All resource endpoints (practices, blessings, media assets, motivational images, want-list items, journal) scope data to the authenticated user extracted from the Bearer JWT (`current_user["id"]`).  A request that targets a row owned by a different user receives **404** (not found), indistinguishable from a genuinely absent row.
+
+`MediaAdminService` receives the acting user's Telegram ID as `chat_id` so that the file-to-Telegram upload (which captures `telegram_file_id`) is sent to the correct user's chat — not to a hardcoded first allowlist entry.
+
+When `allowed_user_ids` is empty (open-registration mode) any authenticated user may access their own rows; no allowlist check is performed.
+
 ### Endpoints
 
 | Method | Path | Auth | Response |
