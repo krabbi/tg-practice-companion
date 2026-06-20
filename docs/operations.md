@@ -799,6 +799,68 @@ cadence takes effect on the next tick — no restart needed.
 
 ---
 
+## Automatic CD — deploy on merge to main (issue #149)
+
+Every merge to `main` triggers an automatic deploy via GitHub Actions once the
+`build-push` job (which publishes the fresh bot image to GHCR) succeeds.
+
+### How it works
+
+```
+push to main
+    │
+    ├─ ci.yml: lint + test
+    │         └─ build-push  (publishes ghcr.io/krabbi/tg-practice-companion:latest)
+    │
+    └─ deploy.yml: deploy job (needs: build-push)
+          └─ SSH into server → bash scripts/deploy.sh
+```
+
+`scripts/deploy.sh` performs the ordered redeploy:
+
+1. `git fetch && git checkout main && git pull origin main` — update source
+2. `docker compose pull bot` — pull the freshly published bot image
+3. Build the Vue SPA in a throwaway `node:20-alpine` container (server has no Node);
+   writes into `frontend/dist/`. **A build failure aborts the script immediately** —
+   `docker compose up -d` is never reached with a stale or partial `dist/`.
+4. `docker compose build web` — rebuild the web image from updated source
+5. `docker compose --profile bot up -d bot` — (re)start the bot; the entrypoint
+   automatically runs `alembic upgrade head` before the bot process starts
+6. Wait (up to 120 s) for the bot container to become healthy — guarantees migrations
+   are committed before web starts
+7. `docker compose --profile web up -d` — (re)start web + nginx with fresh dist/
+
+### Required repository secrets
+
+Set these in **Settings → Secrets and variables → Actions** (never commit to git):
+
+| Secret | Value |
+|---|---|
+| `DEPLOY_SSH_KEY` | Private SSH key for the deploy user on the server; use a dedicated key scoped to a single deploy user with key-only auth |
+| `DEPLOY_HOST` | Server hostname or IP |
+| `DEPLOY_USER` | SSH username on the server (e.g. `deploy`) |
+| `DEPLOY_PATH` | Absolute path to the repository checkout on the server (e.g. `/srv/tg-practice-companion`) |
+
+The `AUTOMATION_TOKEN` and `CLAUDE_CODE_OAUTH_TOKEN` secrets used by the autobot
+pipeline are separate — they are not needed for deployment.
+
+### Re-running a failed deploy
+
+A failed deploy shows as a red `deploy` job in Actions.  Click **Re-run failed jobs**
+to retry (the script is idempotent — safe to re-run).  Alternatively, SSH into the
+server and run the manual procedure below.
+
+### Self-hosted runner (future alternative)
+
+The current approach (GitHub-hosted runner + SSH push) requires inbound SSH from
+GitHub's runner IP ranges and a deploy key secret.  A self-hosted runner on the
+production box eliminates the inbound SSH requirement: replace `runs-on: ubuntu-latest`
+with `runs-on: self-hosted` in `deploy.yml` and register the runner via
+`Settings → Actions → Runners → New self-hosted runner`.  Out of scope for the
+first iteration.
+
+---
+
 ## Production deployment (M6, AC-15)
 
 ### First-time deploy
