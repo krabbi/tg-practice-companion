@@ -16,6 +16,9 @@ jobs:
         uses: appleboy/ssh-action@v1.2.0
         with:
           host: ${{ secrets.DEPLOY_HOST }}
+          # SSH port; the server listens on a non-standard port. Defaults to 22
+          # when the secret is unset, so a standard-port server still works.
+          port: ${{ secrets.DEPLOY_PORT || 22 }}
           username: ${{ secrets.DEPLOY_USER }}
           key: ${{ secrets.DEPLOY_SSH_KEY }}
           script: |

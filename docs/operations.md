@@ -848,6 +848,7 @@ Set these in **Settings → Secrets and variables → Actions** (never commit to
 | `DEPLOY_HOST` | Server hostname or IP |
 | `DEPLOY_USER` | SSH username on the server (e.g. `deploy`) |
 | `DEPLOY_PATH` | Absolute path to the repository checkout on the server (e.g. `/srv/tg-practice-companion`) |
+| `DEPLOY_PORT` | SSH port, if the server does not listen on the default `22`. Optional — falls back to `22` when unset |
 
 The `AUTOMATION_TOKEN` and `CLAUDE_CODE_OAUTH_TOKEN` secrets used by the autobot
 pipeline are separate — they are not needed for deployment.
