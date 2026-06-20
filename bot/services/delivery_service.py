@@ -84,8 +84,24 @@ class DeliveryService:
             await self._bot.send_photo(chat_id=user_id, photo=file_id)
 
         elif practice.content_type == "video":
-            file_id = self._resolve_telegram_file_id(practice)
-            await self._bot.send_video(chat_id=user_id, video=file_id)
+            asset = practice.media_asset
+            if asset is None:
+                raise MediaAssetError(
+                    f"Practice {practice.id} ({practice.name!r}) has no media_asset"
+                )
+            if not asset.telegram_file_id:
+                logger.error(
+                    "video practice %s (%r) skipped: asset %s has no telegram_file_id "
+                    "(file likely exceeds Telegram's 50 MB upload limit)",
+                    practice.id,
+                    practice.name,
+                    asset.id,
+                )
+                raise DeliveryError(
+                    f"Video practice {practice.name!r} cannot be delivered: "
+                    "file exceeds Telegram's 50 MB upload limit"
+                )
+            await self._bot.send_video(chat_id=user_id, video=asset.telegram_file_id)
 
         else:
             raise DeliveryError(f"Unknown content_type {practice.content_type!r}")

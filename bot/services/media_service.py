@@ -14,6 +14,9 @@ from bot.services.storage_service import S3StorageService
 
 _log = logging.getLogger(__name__)
 
+# Telegram Bot API upload cap for send_video; larger files must stay S3-only.
+_TELEGRAM_VIDEO_SIZE_LIMIT = 50 * 1024 * 1024  # 50 MB
+
 
 class MediaAssetError(Exception):
     """Raised when media asset data fails validation."""
@@ -166,9 +169,17 @@ async def _send_to_telegram(
         if msg.photo:
             return msg.photo[-1].file_id
     elif kind == "video":
-        # Videos are S3-only: Telegram's Bot API enforces a 50 MB upload limit,
-        # but the video cap is 250 MB, so we never send video to Telegram.
-        return None
+        if len(data) > _TELEGRAM_VIDEO_SIZE_LIMIT:
+            _log.warning(
+                "video upload skipped for Telegram (%d bytes > %d byte limit) — "
+                "S3-only; scheduled delivery will log an error for this asset",
+                len(data),
+                _TELEGRAM_VIDEO_SIZE_LIMIT,
+            )
+            return None
+        msg = await bot.send_video(chat_id=chat_id, video=input_file)  # type: ignore[union-attr]
+        if msg.video:
+            return msg.video.file_id
     else:
         msg = await bot.send_audio(chat_id=chat_id, audio=input_file)  # type: ignore[union-attr]
         if msg.audio:

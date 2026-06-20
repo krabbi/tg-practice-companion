@@ -33,10 +33,11 @@ _BASE_CONFIG = {
 ALLOWED_USER_ID = 123456789
 _FAKE_PHOTO_FILE_ID = "AgACAgIAAxkBAAIBfGXfake_photo_file_id"
 _FAKE_AUDIO_FILE_ID = "BQACAgIAAxkBAAIBfGXfake_audio_file_id"
+_FAKE_VIDEO_FILE_ID = "CgACAgIAAxkBAAIBfGXfake_video_file_id"
 
 
 def _make_mock_bot() -> MagicMock:
-    """Return a mock Bot that captures file_ids for image and audio uploads."""
+    """Return a mock Bot that captures file_ids for image, audio, and video uploads."""
     bot = MagicMock()
     photo_variant = MagicMock()
     photo_variant.file_id = _FAKE_PHOTO_FILE_ID
@@ -49,6 +50,12 @@ def _make_mock_bot() -> MagicMock:
     audio_msg = MagicMock()
     audio_msg.audio = audio_obj
     bot.send_audio = AsyncMock(return_value=audio_msg)
+
+    video_obj = MagicMock()
+    video_obj.file_id = _FAKE_VIDEO_FILE_ID
+    video_msg = MagicMock()
+    video_msg.video = video_obj
+    bot.send_video = AsyncMock(return_value=video_msg)
 
     # Allow the lifespan to close the bot's session without error
     bot.session = MagicMock()
@@ -235,7 +242,7 @@ async def test_upload_audio_over_image_limit_passes(
 async def test_upload_video_creates_asset_with_s3_key(
     client: AsyncClient, auth_headers: dict
 ) -> None:
-    """Upload a video file → S3 key set, telegram_file_id is None (videos skip Telegram)."""
+    """Upload a small video file → S3 key set, telegram_file_id captured via send_video."""
     fake_video = b"\x00\x00\x00\x18ftypmp42" + b"\x00" * 100
     files = {"file": ("clip.mp4", io.BytesIO(fake_video), "video/mp4")}
     data = {"kind": "video"}
@@ -246,7 +253,7 @@ async def test_upload_video_creates_asset_with_s3_key(
     body = resp.json()
     assert body["kind"] == "video"
     assert body["mime"] == "video/mp4"
-    assert body["telegram_file_id"] is None
+    assert body["telegram_file_id"] == _FAKE_VIDEO_FILE_ID
     assert body["storage_path"] is not None
     assert body["storage_path"].startswith("video/")
     assert body["storage_path"].endswith(".mp4")
