@@ -535,7 +535,25 @@ When `allowed_user_ids` is empty (open-registration mode) any authenticated user
 | `DELETE` | `/api/blessings/{id}` | Bearer JWT | Delete a blessing; 204; 404 if not found |
 | `POST` | `/api/blessings/reorder` | Bearer JWT | Reassign rotation_order 1..N; body `{"ids": [...]}` must include every existing blessing ID; 200 `list[BlessingResponse]`; 400 if any ID missing or unknown |
 
-### Docker Compose service
+### Docker Compose service — bot
+
+Profile: `bot`. Image: `ghcr.io/krabbi/tg-practice-companion:latest` (published by `ci.yml`
+`build-push` job on every push to `main`).
+
+The `bot` service has no Docker healthcheck. Migration ordering (AC-3 — migrations committed
+before web starts) is enforced by a discrete blocking step in `scripts/deploy.sh`:
+
+```bash
+docker compose --profile bot run --rm bot alembic upgrade head
+```
+
+This runs Alembic inside a throwaway bot container (with `db` started first via `depends_on:
+service_healthy`) and exits with a non-zero code on failure. Because the script runs under
+`set -euo pipefail`, any migration failure aborts the deploy before the `web` profile is
+started. The entrypoint's own `alembic upgrade head` (step 6) is then a no-op. This approach
+is deterministic — it does not rely on timing, polling, or health probe `start_period`.
+
+### Docker Compose service — web
 
 Profile: `web`. Build target: `base` (same image as the bot, no extra layers).
 

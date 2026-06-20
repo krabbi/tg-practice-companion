@@ -1,0 +1,24 @@
+name: Deploy
+
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+    branches: [main]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    # Only deploy after the full CI workflow (lint + test + build-push) succeeds.
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    steps:
+      - name: SSH deploy
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          script: |
+            set -euo pipefail
+            cd "${{ secrets.DEPLOY_PATH }}"
+            bash scripts/deploy.sh
