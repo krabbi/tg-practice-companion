@@ -64,10 +64,10 @@ docker compose build web
 # 5. Apply database migrations (blocking, discrete step)
 #    `docker compose run` honours depends_on — it starts the db service first
 #    and waits for its healthcheck (service_healthy) before launching the bot
-#    container. The entrypoint runs `alembic upgrade head` then exits because
-#    no command is passed ... actually the entrypoint exits 0 after alembic
-#    when a command IS passed; we pass the alembic command directly so the
-#    entrypoint honours the $@ branch and exec's it. set -e aborts on failure.
+#    container. The entrypoint always runs `alembic upgrade head` unconditionally,
+#    then exec's any passed command. Passing `alembic upgrade head` explicitly means
+#    the idempotent re-run exits 0 and the container exits cleanly — a reliable
+#    blocking gate. set -e aborts the deploy if migrations fail.
 # ---------------------------------------------------------------------------
 log "Applying database migrations..."
 docker compose --profile bot run --rm bot alembic upgrade head
