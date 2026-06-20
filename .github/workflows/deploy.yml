@@ -1,16 +1,16 @@
 name: Deploy
 
 on:
-  push:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
     branches: [main]
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    # Only deploy after the bot image has been built and pushed to GHCR.
-    needs: [build-push]
-    # build-push is defined in ci.yml; it only runs on push to main, so this
-    # job inherits the same constraint via `needs`.
+    # Only deploy after the full CI workflow (lint + test + build-push) succeeds.
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
     steps:
       - name: SSH deploy
         uses: appleboy/ssh-action@v1.2.0

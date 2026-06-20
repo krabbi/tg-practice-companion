@@ -36,7 +36,7 @@ git pull origin main
 # 2. Pull the freshly published bot image from GHCR
 # ---------------------------------------------------------------------------
 log "Pulling bot image from GHCR..."
-docker compose pull bot
+docker compose --profile bot pull bot
 
 # ---------------------------------------------------------------------------
 # 3. Build the Vue SPA in a throwaway node:20-alpine container
@@ -77,10 +77,14 @@ TIMEOUT=120
 ELAPSED=0
 INTERVAL=5
 while true; do
-  STATUS=$(docker inspect --format='{{if .State.Health}}{{.State.Health.Status}}{{else}}no-healthcheck{{end}}' "$(docker compose ps -q bot)" 2>/dev/null || echo "not-running")
-  if [ "$STATUS" = "healthy" ] || [ "$STATUS" = "no-healthcheck" ]; then
+  STATUS=$(docker inspect --format='{{if .State.Health}}{{.State.Health.Status}}{{else}}no-healthcheck{{end}}' "$(docker compose --profile bot ps -q bot)" 2>/dev/null || echo "not-running")
+  if [ "$STATUS" = "healthy" ]; then
     log "Bot is ready (status: $STATUS)."
     break
+  fi
+  if [ "$STATUS" = "no-healthcheck" ]; then
+    log "ERROR: bot container has no healthcheck configured — cannot verify migration ordering."
+    exit 1
   fi
   if [ "$ELAPSED" -ge "$TIMEOUT" ]; then
     log "ERROR: bot did not become healthy within ${TIMEOUT}s (last status: $STATUS)."

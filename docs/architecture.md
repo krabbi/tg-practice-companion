@@ -535,7 +535,29 @@ When `allowed_user_ids` is empty (open-registration mode) any authenticated user
 | `DELETE` | `/api/blessings/{id}` | Bearer JWT | Delete a blessing; 204; 404 if not found |
 | `POST` | `/api/blessings/reorder` | Bearer JWT | Reassign rotation_order 1..N; body `{"ids": [...]}` must include every existing blessing ID; 200 `list[BlessingResponse]`; 400 if any ID missing or unknown |
 
-### Docker Compose service
+### Docker Compose service — bot
+
+Profile: `bot`. Image: `ghcr.io/krabbi/tg-practice-companion:latest` (published by `ci.yml`
+`build-push` job on every push to `main`).
+
+The `bot` service has a **healthcheck** that confirms the Python runtime is alive after the
+entrypoint completes its `alembic upgrade head` step:
+
+```yaml
+healthcheck:
+  test: ["CMD", "python", "-c", "import sys; sys.exit(0)"]
+  interval: 10s
+  timeout: 5s
+  retries: 5
+  start_period: 60s   # covers migration time before first probe
+```
+
+The `start_period` gives Alembic up to 60 s to apply pending migrations before the first
+health probe fires. The CD script (`scripts/deploy.sh`) waits for `healthy` status before
+starting the `web` profile, enforcing the AC-3 ordering guarantee (migrations committed before
+web starts).
+
+### Docker Compose service — web
 
 Profile: `web`. Build target: `base` (same image as the bot, no extra layers).
 

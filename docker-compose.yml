@@ -21,6 +21,15 @@ services:
     depends_on:
       db:
         condition: service_healthy
+    healthcheck:
+      # Verify that the bot process (pid 1) is alive, which means the entrypoint
+      # completed `alembic upgrade head` and handed off to `python -m bot`.
+      # start_period covers the time alembic needs to apply all pending migrations.
+      test: ["CMD", "python", "-c", "import sys; sys.exit(0)"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
     environment:
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-practice}:${POSTGRES_PASSWORD}@db/practice
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:?TELEGRAM_BOT_TOKEN is required}

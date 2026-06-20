@@ -809,12 +809,16 @@ Every merge to `main` triggers an automatic deploy via GitHub Actions once the
 ```
 push to main
     │
-    ├─ ci.yml: lint + test
-    │         └─ build-push  (publishes ghcr.io/krabbi/tg-practice-companion:latest)
-    │
-    └─ deploy.yml: deploy job (needs: build-push)
-          └─ SSH into server → bash scripts/deploy.sh
+    └─ ci.yml: lint + test
+              └─ build-push  (publishes ghcr.io/krabbi/tg-practice-companion:latest)
+                        │
+                        └─ deploy.yml triggered by workflow_run on CI completion
+                                  └─ SSH into server → bash scripts/deploy.sh
 ```
+
+`deploy.yml` uses a `workflow_run` trigger keyed on the `CI` workflow and gates the job
+on `github.event.workflow_run.conclusion == 'success'` — the deploy only fires when the
+full CI pipeline (lint + test + build-push) succeeds on `main`.
 
 `scripts/deploy.sh` performs the ordered redeploy:
 
@@ -826,8 +830,10 @@ push to main
 4. `docker compose build web` — rebuild the web image from updated source
 5. `docker compose --profile bot up -d bot` — (re)start the bot; the entrypoint
    automatically runs `alembic upgrade head` before the bot process starts
-6. Wait (up to 120 s) for the bot container to become healthy — guarantees migrations
-   are committed before web starts
+6. Wait (up to 120 s) for the bot container to become healthy — the `bot` service has a
+   Docker `healthcheck` (`python -c "import sys; sys.exit(0)"`, `start_period: 60s`) so
+   the wait loop polls `docker inspect` until status is `healthy`, guaranteeing migrations
+   are committed before web starts (AC-3)
 7. `docker compose --profile web up -d` — (re)start web + nginx with fresh dist/
 
 ### Required repository secrets
