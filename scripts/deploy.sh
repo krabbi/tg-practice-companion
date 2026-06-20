@@ -6,8 +6,9 @@
 #   2. docker compose pull bot (fresh GHCR image)
 #   3. Build SPA via throwaway node:20-alpine container into frontend/dist/
 #   4. docker compose build web (rebuild web image from source)
-#   5. docker compose --profile bot up -d bot  (bot starts + runs alembic upgrade head)
-#   6. Wait for bot to become healthy (migrations committed before web starts)
+#   5. docker compose --profile bot run --rm bot alembic upgrade head
+#      (discrete blocking migration step — exits 0 on success, non-zero aborts script)
+#   6. docker compose --profile bot up -d bot  (migrations already applied; entrypoint alembic is now a no-op)
 #   7. docker compose --profile web up -d  (web + nginx with fresh dist/)
 #
 # Secrets / configuration: all in .env on the server. Never committed to git.
@@ -60,46 +61,30 @@ log "Building web image from source..."
 docker compose build web
 
 # ---------------------------------------------------------------------------
-# 5. Start (or recreate) the bot container
-#    The bot entrypoint runs `alembic upgrade head` before the bot process
-#    starts, so migrations are committed before web starts.
+# 5. Apply database migrations (blocking, discrete step)
+#    `docker compose run` honours depends_on — it starts the db service first
+#    and waits for its healthcheck (service_healthy) before launching the bot
+#    container. The entrypoint runs `alembic upgrade head` then exits because
+#    no command is passed ... actually the entrypoint exits 0 after alembic
+#    when a command IS passed; we pass the alembic command directly so the
+#    entrypoint honours the $@ branch and exec's it. set -e aborts on failure.
 # ---------------------------------------------------------------------------
-log "Starting bot container (runs migrations on startup)..."
+log "Applying database migrations..."
+docker compose --profile bot run --rm bot alembic upgrade head
+
+log "Migrations applied successfully."
+
+# ---------------------------------------------------------------------------
+# 6. Start (or recreate) the bot container
+#    Migrations are already committed; the entrypoint's own `alembic upgrade head`
+#    runs again but is a no-op (alembic detects no pending migrations).
+# ---------------------------------------------------------------------------
+log "Starting bot container..."
 docker compose --profile bot up -d bot
 
 # ---------------------------------------------------------------------------
-# 6. Wait for the bot container to become healthy
-#    `docker inspect` returns the health status; we poll until it is "healthy"
-#    or until the timeout (120 s) expires.
-# ---------------------------------------------------------------------------
-log "Waiting for bot to become healthy (up to 120 s)..."
-TIMEOUT=120
-ELAPSED=0
-INTERVAL=5
-while true; do
-  STATUS=$(docker inspect --format='{{if .State.Health}}{{.State.Health.Status}}{{else}}no-healthcheck{{end}}' "$(docker compose --profile bot ps -q bot)" 2>/dev/null || echo "not-running")
-  if [ "$STATUS" = "healthy" ]; then
-    log "Bot is ready (status: $STATUS)."
-    break
-  fi
-  if [ "$STATUS" = "no-healthcheck" ]; then
-    log "ERROR: bot container has no healthcheck configured — cannot verify migration ordering."
-    exit 1
-  fi
-  if [ "$ELAPSED" -ge "$TIMEOUT" ]; then
-    log "ERROR: bot did not become healthy within ${TIMEOUT}s (last status: $STATUS)."
-    exit 1
-  fi
-  sleep "$INTERVAL"
-  ELAPSED=$((ELAPSED + INTERVAL))
-done
-
-# Give the bot one extra second after the health check to finish logging
-# the migration completion message (cosmetic — not a correctness requirement).
-sleep 1
-
-# ---------------------------------------------------------------------------
 # 7. Start (or recreate) web + nginx with the fresh dist/ and image
+#    Migration ordering is guaranteed by step 5's blocking exit — no wait needed.
 # ---------------------------------------------------------------------------
 log "Starting web + nginx..."
 docker compose --profile web up -d

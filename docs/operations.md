@@ -828,12 +828,14 @@ full CI pipeline (lint + test + build-push) succeeds on `main`.
    writes into `frontend/dist/`. **A build failure aborts the script immediately** —
    `docker compose up -d` is never reached with a stale or partial `dist/`.
 4. `docker compose build web` — rebuild the web image from updated source
-5. `docker compose --profile bot up -d bot` — (re)start the bot; the entrypoint
-   automatically runs `alembic upgrade head` before the bot process starts
-6. Wait (up to 120 s) for the bot container to become healthy — the `bot` service has a
-   Docker `healthcheck` (`python -c "import sys; sys.exit(0)"`, `start_period: 60s`) so
-   the wait loop polls `docker inspect` until status is `healthy`, guaranteeing migrations
-   are committed before web starts (AC-3)
+5. `docker compose --profile bot run --rm bot alembic upgrade head` — **discrete blocking
+   migration step**: starts the `db` service (honouring `depends_on: service_healthy`)
+   then runs Alembic inside a throwaway bot container. The script uses `set -euo pipefail`,
+   so a non-zero exit aborts the deploy before any service is restarted. This is the sole
+   mechanism that guarantees migrations are committed before web starts (AC-3). Alembic
+   `upgrade head` is idempotent — re-running deploy.sh is safe.
+6. `docker compose --profile bot up -d bot` — (re)start the bot; the entrypoint's own
+   `alembic upgrade head` is now a no-op (no pending migrations remain)
 7. `docker compose --profile web up -d` — (re)start web + nginx with fresh dist/
 
 ### Required repository secrets
