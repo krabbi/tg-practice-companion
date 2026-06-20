@@ -12,6 +12,7 @@ import pytest
 
 from bot.models.practice import MediaAsset
 from bot.services.media_service import (
+    _TELEGRAM_VIDEO_SIZE_LIMIT,
     MediaAdminService,
     MediaAssetError,
     _kind_default_suffix,
@@ -64,6 +65,12 @@ def _make_mock_bot(file_id: str = "FAKE_FILE_ID") -> MagicMock:
     audio_msg = MagicMock()
     audio_msg.audio = audio_obj
     bot.send_audio = AsyncMock(return_value=audio_msg)
+
+    video_obj = MagicMock()
+    video_obj.file_id = file_id
+    video_msg = MagicMock()
+    video_msg.video = video_obj
+    bot.send_video = AsyncMock(return_value=video_msg)
     return bot
 
 
@@ -334,12 +341,48 @@ async def test_upload_video_accepted():
     s3.put_object.assert_awaited_once()
 
 
-async def test_send_to_telegram_video_returns_none_without_calling_telegram():
-    # Videos skip Telegram: Bot API enforces a 50 MB limit but we accept up to 250 MB.
-    bot = MagicMock()
-    bot.send_video = AsyncMock()
+async def test_send_to_telegram_small_video_calls_send_video_and_returns_file_id():
+    """Videos within the 50 MB limit are sent to Telegram to capture a file_id."""
+    bot = _make_mock_bot("VIDEO_ID")
 
     result = await _send_to_telegram(bot, 1, b"v", "clip.mp4", "video")
 
+    assert result == "VIDEO_ID"
+    bot.send_video.assert_awaited_once()
+
+
+async def test_send_to_telegram_oversized_video_skips_telegram_and_returns_none():
+    """Videos exceeding the Telegram upload limit are S3-only; send_video is never called."""
+    bot = MagicMock()
+    bot.send_video = AsyncMock()
+    oversized = b"x" * (_TELEGRAM_VIDEO_SIZE_LIMIT + 1)
+
+    result = await _send_to_telegram(bot, 1, oversized, "big.mp4", "video")
+
     assert result is None
     bot.send_video.assert_not_called()
+
+
+async def test_upload_small_video_with_bot_captures_telegram_file_id():
+    """Small video upload sends to Telegram and captures file_id on the asset."""
+    bot = _make_mock_bot("VIDEO_ID")
+    service, _session, _repo, _image_repo, _s3 = _make_service(bot=bot, chat_id=42)
+
+    asset = await service.upload(b"vid", "clip.mp4", "video", "video/mp4", user_id=_USER_ID)
+
+    assert asset.telegram_file_id == "VIDEO_ID"
+    bot.send_video.assert_awaited_once()
+
+
+async def test_upload_oversized_video_with_bot_stores_s3_only():
+    """Video exceeding the Telegram limit goes to S3 only; telegram_file_id stays None."""
+    bot = _make_mock_bot("VIDEO_ID")
+    service, _session, _repo, _image_repo, s3 = _make_service(bot=bot, chat_id=42)
+    oversized = b"x" * (_TELEGRAM_VIDEO_SIZE_LIMIT + 1)
+
+    asset = await service.upload(oversized, "big.mp4", "video", "video/mp4", user_id=_USER_ID)
+
+    assert asset.telegram_file_id is None
+    assert asset.storage_path.startswith("video/")
+    bot.send_video.assert_not_awaited()
+    s3.put_object.assert_awaited_once()

@@ -143,11 +143,12 @@ async def test_video_missing_media_asset_raises_delivery_error() -> None:
 
 
 @pytest.mark.asyncio
-async def test_video_missing_telegram_file_id_raises_delivery_error() -> None:
+async def test_video_missing_telegram_file_id_raises_delivery_error_with_size_message() -> None:
+    """Oversized video (no file_id) must raise DeliveryError with a clear operator message."""
     svc, _ = make_service()
     asset = make_asset(kind="video", telegram_file_id=None)
     p = make_practice(content_type="video", media_asset=asset)
-    with pytest.raises(DeliveryError):
+    with pytest.raises(DeliveryError, match="50 MB"):
         await svc.send(p, USER_ID)
 
 
