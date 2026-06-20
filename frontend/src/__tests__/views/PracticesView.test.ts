@@ -249,6 +249,63 @@ describe('PracticesView video upload', () => {
     expect(wrapper.find('.upload-success').text()).toContain('returned-uuid')
   })
 
+  it('includes media_asset_id in create API call after successful upload', async () => {
+    const asset: MediaAsset = {
+      id: 'video-uuid-123',
+      kind: 'video',
+      storage_path: 'video/video-uuid-123.mp4',
+      telegram_file_id: null,
+      mime: 'video/mp4',
+      original_filename: 'test.mp4',
+      created_at: '2026-06-19T00:00:00Z',
+      updated_at: '2026-06-19T00:00:00Z',
+    }
+    mockUploadMediaAsset.mockResolvedValue(asset)
+
+    const mockFetch = vi
+      .fn()
+      .mockResolvedValueOnce({ ok: true, status: 200, json: () => Promise.resolve([]) })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: () =>
+          Promise.resolve({
+            id: 'new-id',
+            name: 'Test Video',
+            content_type: 'video',
+            media_asset_id: 'video-uuid-123',
+          }),
+      })
+    vi.stubGlobal('fetch', mockFetch)
+
+    const wrapper = await openFormWithVideoType()
+
+    const nameInput = wrapper.find('input[type="text"][maxlength="120"]')
+    await nameInput.setValue('Test Video')
+
+    const intervalInput = wrapper
+      .findAll('input[type="number"]')
+      .find((i) => i.attributes('min') === '1')
+    await intervalInput!.setValue(1)
+
+    const fileInput = wrapper.find('input[type="file"]')
+    const file = new File(['data'], 'test.mp4', { type: 'video/mp4' })
+    Object.defineProperty(fileInput.element, 'files', { value: [file], configurable: true })
+    await fileInput.trigger('change')
+    await flushPromises()
+
+    const uploadBtn = wrapper.findAll('button').find((b) => b.text() === 'Загрузить')
+    await uploadBtn!.trigger('click')
+    await flushPromises()
+
+    await wrapper.find('form').trigger('submit')
+    await flushPromises()
+
+    const createCall = mockFetch.mock.calls[1]
+    const body = JSON.parse(createCall[1].body as string)
+    expect(body.media_asset_id).toBe('video-uuid-123')
+  })
+
   it('passes video/* file with kind=video to uploadMediaAsset', async () => {
     const asset: MediaAsset = {
       id: 'asset-id',

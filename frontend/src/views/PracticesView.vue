@@ -87,12 +87,14 @@ const videoFile = ref<File | null>(null)
 const videoUploading = ref(false)
 const videoProgress = ref(0)
 const videoUploadError = ref('')
+const videoJustUploaded = ref(false)
 
 function resetVideoUpload(): void {
   videoFile.value = null
   videoUploading.value = false
   videoProgress.value = 0
   videoUploadError.value = ''
+  videoJustUploaded.value = false
   if (videoFileRef.value) videoFileRef.value.value = ''
 }
 
@@ -117,6 +119,7 @@ async function uploadVideoFile(): Promise<void> {
       videoProgress.value = p
     })
     formData.media_asset_id = asset.id
+    videoJustUploaded.value = true
     videoFile.value = null
     if (videoFileRef.value) videoFileRef.value.value = ''
   } catch (e) {
@@ -235,6 +238,11 @@ function validateForm(): boolean {
     valid = false
   }
 
+  if (showVideoField.value && !formData.media_asset_id) {
+    formErrors['media_asset_id'] = 'Загрузите видеофайл перед сохранением'
+    valid = false
+  }
+
   return valid
 }
 
@@ -248,7 +256,10 @@ async function submitForm(): Promise<void> {
     name: formData.name.trim(),
     content_type: formData.content_type,
     content: showContentField.value ? formData.content.trim() || null : null,
-    media_asset_id: showMediaField.value ? formData.media_asset_id.trim() || null : null,
+    media_asset_id:
+      showMediaField.value || showVideoField.value
+        ? formData.media_asset_id.trim() || null
+        : null,
     periodicity_type: formData.periodicity_type,
     interval_hours:
       formData.periodicity_type === 'every_n_hours' ? (formData.interval_hours ?? undefined) : null,
@@ -440,9 +451,12 @@ onMounted(loadPractices)
               <span class="progress-label">{{ videoProgress }}%</span>
             </div>
             <p v-if="videoUploadError" class="upload-error">{{ videoUploadError }}</p>
-            <p v-if="formData.media_asset_id && !videoUploading" class="upload-success">
+            <p v-if="videoJustUploaded && !videoUploading" class="upload-success">
               Загружено: {{ formData.media_asset_id }}
             </p>
+            <span v-if="formErrors['media_asset_id']" class="field-error">
+              {{ formErrors['media_asset_id'] }}
+            </span>
           </div>
 
           <Field label="Тип расписания *">
