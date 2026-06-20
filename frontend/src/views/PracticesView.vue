@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted } from 'vue'
+import { ref, reactive, computed, watch, onMounted } from 'vue'
 import { ApiError } from '@/api/client'
 import {
   listPractices,
@@ -10,6 +10,7 @@ import {
   type ContentType,
   type PeriodicityType,
 } from '@/api/practices'
+import { uploadMediaAsset } from '@/api/media'
 import Card from '@/components/ui/Card.vue'
 import Badge from '@/components/ui/Badge.vue'
 import Button from '@/components/ui/Button.vue'
@@ -22,6 +23,7 @@ const CONTENT_TYPES: { value: ContentType; label: string }[] = [
   { value: 'text', label: 'Текст' },
   { value: 'audio', label: 'Аудио' },
   { value: 'image', label: 'Изображение' },
+  { value: 'video', label: 'Видео' },
   { value: 'want', label: 'Хочу' },
   { value: 'good_deeds', label: 'Добрые дела' },
   { value: 'motivational_image', label: 'Мотивирующее изображение' },
@@ -78,6 +80,55 @@ const submitting = ref(false)
 
 const showContentField = computed(() => TEXT_CONTENT_TYPES.includes(formData.content_type))
 const showMediaField = computed(() => MEDIA_CONTENT_TYPES.includes(formData.content_type))
+const showVideoField = computed(() => formData.content_type === 'video')
+
+const videoFileRef = ref<HTMLInputElement | null>(null)
+const videoFile = ref<File | null>(null)
+const videoUploading = ref(false)
+const videoProgress = ref(0)
+const videoUploadError = ref('')
+const videoJustUploaded = ref(false)
+
+function resetVideoUpload(): void {
+  videoFile.value = null
+  videoUploading.value = false
+  videoProgress.value = 0
+  videoUploadError.value = ''
+  videoJustUploaded.value = false
+  if (videoFileRef.value) videoFileRef.value.value = ''
+}
+
+watch(
+  () => formData.content_type,
+  () => resetVideoUpload(),
+)
+
+function onVideoFileChange(e: Event): void {
+  const target = e.target as HTMLInputElement
+  videoFile.value = target.files?.[0] ?? null
+  videoUploadError.value = ''
+}
+
+async function uploadVideoFile(): Promise<void> {
+  if (!videoFile.value) return
+  videoUploading.value = true
+  videoProgress.value = 0
+  videoUploadError.value = ''
+  try {
+    const asset = await uploadMediaAsset(videoFile.value, 'video', (p) => {
+      videoProgress.value = p
+    })
+    formData.media_asset_id = asset.id
+    videoJustUploaded.value = true
+    videoFile.value = null
+    if (videoFileRef.value) videoFileRef.value.value = ''
+  } catch (e) {
+    videoUploadError.value =
+      e instanceof ApiError ? (e.detail ?? `Ошибка ${e.status}`) : 'Ошибка загрузки'
+  } finally {
+    videoUploading.value = false
+  }
+}
 
 function contentTypeLabel(ct: ContentType): string {
   return CONTENT_TYPES.find((c) => c.value === ct)?.label ?? ct
@@ -110,6 +161,7 @@ function openCreate(): void {
   newTime.value = ''
   formError.value = ''
   Object.keys(formErrors).forEach((k) => delete formErrors[k])
+  resetVideoUpload()
   showForm.value = true
 }
 
@@ -133,6 +185,7 @@ function openEdit(p: Practice): void {
   newTime.value = ''
   formError.value = ''
   Object.keys(formErrors).forEach((k) => delete formErrors[k])
+  resetVideoUpload()
   showForm.value = true
 }
 
@@ -185,6 +238,11 @@ function validateForm(): boolean {
     valid = false
   }
 
+  if (showVideoField.value && !formData.media_asset_id) {
+    formErrors['media_asset_id'] = 'Загрузите видеофайл перед сохранением'
+    valid = false
+  }
+
   return valid
 }
 
@@ -198,7 +256,10 @@ async function submitForm(): Promise<void> {
     name: formData.name.trim(),
     content_type: formData.content_type,
     content: showContentField.value ? formData.content.trim() || null : null,
-    media_asset_id: showMediaField.value ? formData.media_asset_id.trim() || null : null,
+    media_asset_id:
+      showMediaField.value || showVideoField.value
+        ? formData.media_asset_id.trim() || null
+        : null,
     periodicity_type: formData.periodicity_type,
     interval_hours:
       formData.periodicity_type === 'every_n_hours' ? (formData.interval_hours ?? undefined) : null,
@@ -368,6 +429,35 @@ onMounted(loadPractices)
           <Field v-if="showMediaField" label="UUID медиафайла">
             <input v-model="formData.media_asset_id" type="text" placeholder="UUID из раздела Медиа" />
           </Field>
+
+          <div v-if="showVideoField" class="field">
+            <label class="field-label">Видеофайл</label>
+            <input
+              ref="videoFileRef"
+              type="file"
+              accept="video/*"
+              :disabled="videoUploading"
+              @change="onVideoFileChange"
+            />
+            <Button
+              v-if="videoFile && !videoUploading"
+              type="button"
+              variant="secondary"
+              size="sm"
+              @click="uploadVideoFile"
+            >Загрузить</Button>
+            <div v-if="videoUploading" class="progress-wrap">
+              <div class="progress-bar" :style="{ width: `${videoProgress}%` }"></div>
+              <span class="progress-label">{{ videoProgress }}%</span>
+            </div>
+            <p v-if="videoUploadError" class="upload-error">{{ videoUploadError }}</p>
+            <p v-if="videoJustUploaded && !videoUploading" class="upload-success">
+              Загружено: {{ formData.media_asset_id }}
+            </p>
+            <span v-if="formErrors['media_asset_id']" class="field-error">
+              {{ formErrors['media_asset_id'] }}
+            </span>
+          </div>
 
           <Field label="Тип расписания *">
             <select v-model="formData.periodicity_type">
@@ -747,5 +837,46 @@ onMounted(loadPractices)
   justify-content: flex-end;
   gap: var(--space-3);
   padding-top: var(--space-2);
+}
+
+.progress-wrap {
+  position: relative;
+  height: 1.5rem;
+  background: color-mix(in srgb, var(--color-hint) 20%, transparent);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  margin-top: var(--space-1);
+}
+
+.progress-bar {
+  position: absolute;
+  inset-block: 0;
+  left: 0;
+  background: var(--color-accent);
+  transition: width 0.15s ease;
+}
+
+.progress-label {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--text-xs);
+  font-weight: var(--font-weight-medium);
+  color: var(--color-text);
+}
+
+.upload-error {
+  color: var(--color-danger);
+  font-size: var(--text-xs);
+  margin: var(--space-1) 0 0;
+}
+
+.upload-success {
+  color: var(--color-success);
+  font-size: var(--text-xs);
+  margin: var(--space-1) 0 0;
+  word-break: break-all;
 }
 </style>

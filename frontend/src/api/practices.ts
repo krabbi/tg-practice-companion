@@ -5,6 +5,7 @@ export type ContentType =
   | 'text'
   | 'audio'
   | 'image'
+  | 'video'
   | 'want'
   | 'good_deeds'
   | 'motivational_image'
